@@ -1,0 +1,32 @@
+set(GAS_BUNDLE_TMP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/bundle-tmp")
+set(FETCHCONTENT_BASE_DIR "${GAS_BUNDLE_TMP_DIR}")
+set(FETCHCONTENT_QUIET FALSE)
+
+set(GAS_USE_SDL FALSE)
+if (BOT_OS_LINUX OR BOT_OS_WINDOWS OR BOT_OS_MACOS)
+  set(GAS_USE_SDL TRUE)
+endif()
+
+set(GAS_USE_SDL "${GAS_USE_SDL}" PARENT_SCOPE)
+
+if (GAS_USE_SDL)
+  include(setup-sdl.cmake)
+  set(SDL_BUNDLED_DIR "${SDL_BUNDLED_DIR}" PARENT_SCOPE)
+endif()
+
+option(GAS_USE_DAWN "GAS use Dawn for C++ WebGPU support" TRUE)
+
+if (GAS_USE_DAWN)
+  include(setup-dawn.cmake)
+  set(DAWN_BUNDLED_DIR "${DAWN_BUNDLED_DIR}" PARENT_SCOPE)
+endif()
+
+if (NOT EMSCRIPTEN)
+  include(setup-slang.cmake)
+  set(SLANG_BUNDLED_DIR "${SLANG_BUNDLED_DIR}" PARENT_SCOPE)
+endif()
+
+include(setup-imgui.cmake)
+set(IMGUI_BUNDLED_DIR "${IMGUI_BUNDLED_DIR}" PARENT_SCOPE)
+
+set(FETCHCONTENT_QUIET TRUE)

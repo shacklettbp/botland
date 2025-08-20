@@ -1,0 +1,8 @@
+/toolchain
+/toolchain-src-cmake
+/bundle-tmp
+/gtest
+/tinyxml2
+/meshoptimizer
+/fast_float
+/stb

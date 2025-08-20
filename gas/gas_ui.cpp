@@ -1,0 +1,730 @@
+#include "gas_ui.hpp"
+
+#include <rt/err.hpp>
+
+#include <vector>
+
+#ifdef GAS_USE_SDL
+#include <SDL3/SDL.h>
+
+#if defined(SDL_PLATFORM_MACOS)
+#include <SDL3/SDL_metal.h>
+#endif
+
+#if defined(SDL_PLATFORM_LINUX)
+#include "linux.hpp"
+#endif
+
+#if defined(SDL_PLATFORM_WIN32)
+#include "windows.hpp"
+#endif
+
+#endif
+
+#ifdef GAS_SUPPORT_WEBGPU
+#include "wgpu_init.hpp"
+#endif
+
+namespace bot::gas {
+
+namespace {
+
+#ifdef GAS_USE_SDL
+
+struct WindowOSData {
+  SDL_Window *sdl;
+#if defined(SDL_PLATFORM_MACOS)
+  SDL_MetalView metalView;
+#endif
+};
+
+#endif
+
+struct PlatformWindow : public Window {
+  WindowOSData os;
+};
+
+}
+
+struct UIBackend : public UISystem {
+  GPULib *gpuLib;
+
+  PlatformWindow mainWindow;
+#ifdef GAS_USE_SDL
+  SDL_WindowID mainWindowID;
+#endif
+
+  UserInput inputState;
+  UserInputEvents inputEvents;
+
+  const char * inputText;
+
+  inline void shutdown();
+
+  inline Window * createWindow(const char *title,
+                               i32 starting_pixel_width,
+                               i32 starting_pixel_height,
+                               WindowInitFlags flags);
+
+  inline Window * createMainWindow(const char *title,
+                                   i32 starting_pixel_width,
+                                   i32 starting_pixel_height,
+                                   WindowInitFlags flags);
+
+  inline void destroyWindow(Window *window);
+  inline void destroyMainWindow();
+
+  inline void enableRawMouseInput(Window *window_base);
+  inline void disableRawMouseInput(Window *window_base);
+
+  inline void beginTextEntry(
+      Window *window_base, Vector2 pos, float line_height);
+  inline void endTextEntry(Window *window_base);
+
+  inline bool processEvents();
+};
+
+#ifdef GAS_USE_SDL
+static inline void checkSDL(bool res, const char *msg)
+{
+    if (!res) [[unlikely]] {
+        FATAL("%s: %s\n", msg, SDL_GetError());
+    }
+}
+
+static inline SDL_PropertiesID checkSDLProp(
+  SDL_PropertiesID res, const char *msg)
+{
+    if (res == 0) [[unlikely]] {
+        FATAL("%s: %s\n", msg, SDL_GetError());
+    }
+
+    return res;
+}
+
+template <typename T>
+static inline T *checkSDLPointer(T *ptr, const char *msg)
+{
+    if (ptr == nullptr) [[unlikely]] {
+        FATAL("%s: %s\n", msg, SDL_GetError());
+    }
+
+    return ptr;
+}
+
+#define REQ_SDL(expr) checkSDL((expr), #expr)
+#define REQ_SDL_PROP(expr) checkSDLProp((expr), #expr)
+#define REQ_SDL_PTR(expr) checkSDLPointer((expr), #expr)
+#endif
+
+static void initUIBackendAPI()
+{
+#ifdef GAS_USE_SDL
+  REQ_SDL(SDL_Init(SDL_INIT_GAMEPAD | SDL_INIT_VIDEO));
+#endif
+}
+
+static void cleanupUIBackendAPI()
+{
+#ifdef GAS_USE_SDL
+  SDL_Quit();
+#endif
+}
+
+UISystem * UISystem::init(const Config &cfg)
+{
+  initUIBackendAPI();
+
+  GPUAPISelect api_select;
+  if (cfg.desiredGPULib == GPUAPISelect::None) {
+    api_select = GPULib::autoSelectAPI();
+  } else {
+    api_select = cfg.desiredGPULib;
+  }
+
+  std::vector<const char *> api_exts;
+
+  GPULib *gpu_lib = GPULib::init(api_select, {
+    .enableValidation = cfg.enableValidation,
+    .debugPipelineCompilation = cfg.debugPipelineCompilation,
+    .errorsAreFatal = cfg.errorsAreFatal,
+    .enablePresent = true,
+    .apiExtensions = api_exts,
+  });
+
+  return new UIBackend {
+    .gpuLib = gpu_lib,
+    .mainWindow = {},
+#ifdef GAS_USE_SDL
+    .mainWindowID = {},
+#endif
+    .inputState = {},
+    .inputEvents = {},
+    .inputText = nullptr,
+  };
+}
+
+void UIBackend::shutdown()
+{
+  gpuLib->shutdown();
+
+  delete this;
+
+  cleanupUIBackendAPI();
+}
+
+static void initWindow(PlatformWindow *window_out,
+                       GPULib *gpu_api,
+                       const char *title,
+                       i32 starting_pixel_width,
+                       i32 starting_pixel_height,
+                       WindowInitFlags init_flags)
+{
+#ifdef GAS_USE_SDL
+  i32 os_width = starting_pixel_width;
+  i32 os_height = starting_pixel_height;
+
+#if defined(SDL_PLATFORM_MACOS) or defined(SDL_PLATFORM_LINUX)
+  chk(os_width % 2 == 0);
+  chk(os_height % 2 == 0);
+
+  os_width = os_width / 2;
+  os_height = os_height / 2;
+#endif
+
+  SDL_WindowFlags window_flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
+
+  if ((init_flags & WindowInitFlags::Resizable) != WindowInitFlags::None) {
+    window_flags |= SDL_WINDOW_RESIZABLE;
+  }
+
+  if ((init_flags & WindowInitFlags::Fullscreen) != WindowInitFlags::None) {
+    window_flags |= SDL_WINDOW_FULLSCREEN;
+  }
+
+#if defined(SDL_PLATFORM_LINUX)
+  window_flags |= SDL_WINDOW_VULKAN;
+#elif defined(SDL_PLATFORM_MACOS)
+  window_flags |= SDL_WINDOW_METAL;
+#endif
+
+  WindowOSData os;
+
+  SDL_Window *sdl_hdl = REQ_SDL_PTR(
+    SDL_CreateWindow(title, os_width, os_height, window_flags));
+
+  os.sdl = sdl_hdl;
+
+  SDL_PropertiesID window_props =
+    REQ_SDL_PROP(SDL_GetWindowProperties(sdl_hdl));
+  
+  void *os_hdl_ptr;
+#if defined(SDL_PLATFORM_LINUX)
+  LinuxWindowHandle linux_hdl;
+
+  if (SDL_strcmp(SDL_GetCurrentVideoDriver(), "x11") == 0) {
+    void *xdisplay = SDL_GetPointerProperty(
+      window_props, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, NULL);
+    uint64_t xwindow = SDL_GetNumberProperty(
+      window_props, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
+    if (xdisplay == 0 || xwindow == 0) {
+      FATAL("Failed to get X11 window properties from SDL");
+    }
+
+    linux_hdl.backend = LinuxWindowHandle::Backend::X11;
+    linux_hdl.x11 = {
+      .display = xdisplay,
+      .window = xwindow,
+    };
+  } else if (SDL_strcmp(SDL_GetCurrentVideoDriver(), "wayland") == 0) {
+    void *display = SDL_GetPointerProperty(
+      window_props, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, NULL);
+    void *surface = SDL_GetPointerProperty(
+      window_props, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, NULL);
+    if (!display || !surface) {
+      FATAL("Failed to get X11 window properties from SDL");
+    }
+
+    linux_hdl.backend = LinuxWindowHandle::Backend::Wayland;
+    linux_hdl.wayland = {
+      .display = display,
+      .surface = surface,
+    };
+  } else {
+    FATAL("Unknown SDL video driver on linux");
+  }
+
+  os_hdl_ptr = &linux_hdl;
+#elif defined(SDL_PLATFORM_MACOS)
+  SDL_MetalView metal_view = REQ_SDL_PTR(SDL_Metal_CreateView(sdl_hdl));
+  os.metalView = metal_view;
+
+  void *ca_layer = REQ_SDL_PTR(SDL_Metal_GetLayer(metal_view));
+
+  os_hdl_ptr = ca_layer;
+#elif defined(SDL_PLATFORM_WIN32)
+  void *hinstance = SDL_GetPointerProperty(SDL_GetWindowProperties(sdl_hdl),
+      SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER, NULL);
+  void *hwnd = SDL_GetPointerProperty(SDL_GetWindowProperties(sdl_hdl),
+      SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+  if (!hinstance || !hwnd) {
+    FATAL("Failed to get WIN32 window handles from SDL");
+  }
+
+  Win32WindowHandle win32_hdl {
+    .hinstance = hinstance,
+    .hwnd = hwnd,
+  };
+
+  os_hdl_ptr = &win32_hdl;
+#elif defined(SDL_PLATFORM_EMSCRIPTEN)
+  os_hdl_ptr = (void *)title;
+#else
+  static_assert(false, "Unimplemented");
+#endif
+
+  REQ_SDL(SDL_SetPointerProperty(window_props, "gas_hdl", window_out));
+
+#endif
+
+  Surface surface = gpu_api->createSurface(
+      os_hdl_ptr, starting_pixel_width, starting_pixel_height);
+
+  window_out->pixelWidth = starting_pixel_width;
+  window_out->pixelHeight = starting_pixel_height;
+  window_out->systemUIScale = 2.f; // FIXME 
+
+  window_out->state = WindowState::IsFocused;
+
+  window_out->surface = surface;
+  window_out->os = os;
+}
+
+static void cleanupWindow(PlatformWindow *window,
+                          GPULib *gpu_api)
+{
+  gpu_api->destroySurface(window->surface);
+
+#ifdef GAS_USE_SDL
+
+#if defined(SDL_PLATFORM_MACOS)
+  SDL_Metal_DestroyView(window->os.metalView);
+#endif
+
+  SDL_DestroyWindow(window->os.sdl);
+#endif
+}
+
+Window * UIBackend::createWindow(const char *title,
+                                i32 starting_pixel_width,
+                                i32 starting_pixel_height,
+                                WindowInitFlags flags)
+{
+  PlatformWindow *window = new PlatformWindow {};
+
+  initWindow(window, gpuLib, title,
+             starting_pixel_width, starting_pixel_height, flags);
+
+  return window;
+}
+
+Window * UIBackend::createMainWindow(const char *title,
+                                    i32 starting_pixel_width,
+                                    i32 starting_pixel_height,
+                                    WindowInitFlags flags)
+{
+  initWindow(&mainWindow, gpuLib, title,
+             starting_pixel_width, starting_pixel_height, flags);
+
+#ifdef GAS_USE_SDL
+  mainWindowID = SDL_GetWindowID(mainWindow.os.sdl);
+#endif
+
+  return &mainWindow;
+}
+
+void UIBackend::destroyWindow(Window *window)
+{
+  auto plat_window = static_cast<PlatformWindow *>(window);
+  cleanupWindow(plat_window, gpuLib);
+  delete plat_window;
+}
+
+void UIBackend::destroyMainWindow()
+{
+  cleanupWindow(&mainWindow, gpuLib);
+}
+
+void UIBackend::enableRawMouseInput(Window *window_base)
+{
+  PlatformWindow *window = (PlatformWindow *)window_base;
+#ifdef GAS_USE_SDL
+  SDL_Window *sdl_hdl = window->os.sdl;
+
+  if (!SDL_GetWindowRelativeMouseMode(sdl_hdl)) {
+    REQ_SDL(SDL_SetWindowRelativeMouseMode(sdl_hdl, true));
+  }
+#endif
+}
+
+void UIBackend::disableRawMouseInput(Window *window_base)
+{
+  PlatformWindow *window = (PlatformWindow *)window_base;
+#ifdef GAS_USE_SDL
+  SDL_Window *sdl_hdl = window->os.sdl;
+
+  if (SDL_GetWindowRelativeMouseMode(sdl_hdl)) {
+    REQ_SDL(SDL_SetWindowRelativeMouseMode(sdl_hdl, false));
+  }
+#endif
+}
+
+
+void UIBackend::beginTextEntry(
+    Window *window_base, Vector2 pos, float line_height)
+{
+  PlatformWindow *window = (PlatformWindow *)window_base;
+#ifdef GAS_USE_SDL
+  SDL_Window *sdl_hdl = window->os.sdl;
+
+  SDL_Rect r;
+  r.x = pos.x;
+  r.y = pos.y;
+  r.w = 1;
+  r.h = line_height;
+
+  REQ_SDL(SDL_SetTextInputArea(sdl_hdl, &r, 0));
+  if (!SDL_TextInputActive(sdl_hdl)) {
+    REQ_SDL(SDL_StartTextInput(sdl_hdl));
+  }
+#endif
+}
+
+void UIBackend::endTextEntry(Window *window_base)
+{
+  PlatformWindow *window = (PlatformWindow *)window_base;
+#ifdef GAS_USE_SDL
+  SDL_Window *sdl_hdl = window->os.sdl;
+  chk(SDL_TextInputActive(sdl_hdl));
+  REQ_SDL(SDL_StopTextInput(sdl_hdl));
+#endif
+}
+
+bool UIBackend::processEvents()
+{
+  bool should_quit = false;
+
+  inputEvents.clear();
+  inputText = nullptr;
+
+#ifdef GAS_USE_SDL
+  auto getPlatformWindow =
+    [this]
+  (SDL_WindowID window_id) -> PlatformWindow *
+  {
+    if (window_id == mainWindowID) [[likely]] {
+      return &mainWindow;
+    } else if (window_id == 0) {
+      return nullptr;
+    } else {
+      SDL_Window *sdl_hdl = REQ_SDL_PTR(SDL_GetWindowFromID(window_id));
+      SDL_PropertiesID window_props =
+        REQ_SDL_PROP(SDL_GetWindowProperties(sdl_hdl));
+
+      return (PlatformWindow *)REQ_SDL_PTR(SDL_GetPointerProperty(
+        window_props, "gas_hdl", nullptr));
+    }
+  };
+
+  auto sdlKeyToInputID =
+    []
+  (SDL_Keycode key) -> InputID
+  {
+    switch (key) {
+      default:             return InputID::NUM_IDS;
+      case SDLK_A:         return InputID::A;
+      case SDLK_B:         return InputID::B;
+      case SDLK_C:         return InputID::C;
+      case SDLK_D:         return InputID::D;
+      case SDLK_E:         return InputID::E;
+      case SDLK_F:         return InputID::F;
+      case SDLK_G:         return InputID::G;
+      case SDLK_H:         return InputID::H;
+      case SDLK_I:         return InputID::I;
+      case SDLK_J:         return InputID::J;
+      case SDLK_K:         return InputID::K;
+      case SDLK_L:         return InputID::L;
+      case SDLK_M:         return InputID::M;
+      case SDLK_N:         return InputID::N;
+      case SDLK_O:         return InputID::O;
+      case SDLK_P:         return InputID::P;
+      case SDLK_Q:         return InputID::Q;
+      case SDLK_R:         return InputID::R;
+      case SDLK_S:         return InputID::S;
+      case SDLK_T:         return InputID::T;
+      case SDLK_U:         return InputID::U;
+      case SDLK_V:         return InputID::V;
+      case SDLK_W:         return InputID::W;
+      case SDLK_X:         return InputID::X;
+      case SDLK_Y:         return InputID::Y;
+      case SDLK_Z:         return InputID::Z;
+      case SDLK_0:         return InputID::K0;
+      case SDLK_1:         return InputID::K1;
+      case SDLK_2:         return InputID::K2;
+      case SDLK_3:         return InputID::K3;
+      case SDLK_4:         return InputID::K4;
+      case SDLK_5:         return InputID::K5;
+      case SDLK_6:         return InputID::K6;
+      case SDLK_7:         return InputID::K7;
+      case SDLK_8:         return InputID::K8;
+      case SDLK_9:         return InputID::K9;
+      case SDLK_LSHIFT:    return InputID::Shift;
+      case SDLK_RSHIFT:    return InputID::Shift;
+      case SDLK_SPACE:     return InputID::Space;
+      case SDLK_BACKSPACE: return InputID::BackSpace;
+      case SDLK_ESCAPE:    return InputID::Esc;
+      case SDLK_RETURN:    return InputID::Enter;
+    }
+  };
+
+  auto sdlMouseButtonToInputID =
+    [](uint8_t button)
+  {
+    switch (button) {
+      default:                return InputID::NUM_IDS;
+      case SDL_BUTTON_LEFT:   return InputID::MouseLeft;
+      case SDL_BUTTON_MIDDLE: return InputID::MouseMiddle;
+      case SDL_BUTTON_RIGHT:  return InputID::MouseRight;
+      case SDL_BUTTON_X1:     return InputID::Mouse4;
+      case SDL_BUTTON_X2:     return InputID::Mouse5;
+    }
+  };
+
+  static std::array<SDL_Event, 1024> events;
+
+  SDL_PumpEvents();
+
+  int num_events;
+  do {
+    num_events = SDL_PeepEvents(events.data(), events.size(),
+      SDL_GETEVENT, SDL_EVENT_FIRST, SDL_EVENT_LAST);
+
+    if (num_events < 0) [[unlikely]] {
+      FATAL("Error while processing SDL events: %s\n", SDL_GetError());
+    }
+
+    for (int i = 0; i < num_events; i++) {
+      SDL_Event &e = events[i];
+
+      switch (e.type) {
+        default: break;
+        case SDL_EVENT_QUIT: {
+          should_quit = true;
+        } break;
+        case SDL_EVENT_MOUSE_MOTION: {
+          PlatformWindow *window = getPlatformWindow(e.motion.windowID);
+          if (!window) {
+            break;
+          }
+
+          Vector2 new_mouse_pos { e.motion.x, e.motion.y };
+          Vector2 new_mouse_delta { e.motion.xrel, e.motion.yrel };
+
+#if defined(SDL_PLATFORM_MACOS) or defined(SDL_PLATFORM_LINUX)
+          // macOS reports mouse in half pixel coords for hidpi displays
+          new_mouse_pos *= 2.f;
+          new_mouse_delta *= 2.f;
+#endif
+          inputState.setMousePosition(new_mouse_pos);
+          inputEvents.updateMouseDelta(new_mouse_delta);
+        } break;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+          InputID id = sdlMouseButtonToInputID(e.button.button);
+
+          if (e.button.down) {
+            inputState.setDown(id);
+          } else {
+            inputState.setUp(id);
+          }
+
+          inputEvents.recordDownEvent(id);
+        } break;
+        case SDL_EVENT_MOUSE_BUTTON_UP: {
+          InputID id = sdlMouseButtonToInputID(e.button.button);
+
+          if (e.button.down) {
+            inputState.setDown(id);
+          } else {
+            inputState.setUp(id);
+          }
+
+          inputEvents.recordUpEvent(id);
+        } break;
+        case SDL_EVENT_MOUSE_WHEEL: {
+          inputEvents.updateMouseScroll({ e.wheel.x, e.wheel.y });
+        } break;
+        case SDL_EVENT_KEY_DOWN: {
+          PlatformWindow *window = getPlatformWindow(e.key.windowID);
+          if (!window || SDL_TextInputActive(window->os.sdl)) {
+            break;
+          }
+
+          InputID id = sdlKeyToInputID(e.key.key);
+          if (id == InputID::NUM_IDS) {
+            break;
+          }
+
+          if (e.key.down) {
+            inputState.setDown(id);
+          } else {
+            inputState.setUp(id);
+          }
+
+          inputEvents.recordDownEvent(id);
+        } break;
+        case SDL_EVENT_KEY_UP: {
+          PlatformWindow *window = getPlatformWindow(e.key.windowID);
+          if (!window || SDL_TextInputActive(window->os.sdl)) {
+            break;
+          }
+
+          InputID id = sdlKeyToInputID(e.key.key);
+          if (id == InputID::NUM_IDS) {
+            break;
+          }
+
+          if (e.key.down) {
+            inputState.setDown(id);
+          } else {
+            inputState.setUp(id);
+          }
+
+          inputEvents.recordUpEvent(id);
+        } break;
+        case SDL_EVENT_TEXT_INPUT: {
+          if (!getPlatformWindow(e.text.windowID)) {
+            break;
+          }
+
+          inputText = e.text.text;
+        } break;
+        case SDL_EVENT_WINDOW_FOCUS_GAINED: {
+          PlatformWindow *window = getPlatformWindow(e.motion.windowID);
+          if (!window) {
+            break;
+          }
+
+          window->state |= WindowState::IsFocused;
+        } break;
+        case SDL_EVENT_WINDOW_FOCUS_LOST: {
+          PlatformWindow *window = getPlatformWindow(e.motion.windowID);
+          if (!window) {
+            break;
+          }
+
+          window->state &= WindowState(~(u32)WindowState::IsFocused);
+        } break;
+        case SDL_EVENT_WINDOW_CLOSE_REQUESTED: {
+          PlatformWindow *window = getPlatformWindow(e.window.windowID);
+          if (!window) {
+            break;
+          }
+
+          window->state |= WindowState::ShouldClose;
+        } break;
+      }
+    }
+  } while (num_events == events.size());
+
+#endif
+
+  return should_quit;
+}
+
+static inline UIBackend * backend(UISystem *base)
+{
+  return static_cast<UIBackend *>(base);
+}
+
+void UISystem::shutdown() { backend(this)->shutdown(); }
+
+Window * UISystem::createWindow(const char *title,
+                                i32 starting_pixel_width,
+                                i32 starting_pixel_height,
+                                WindowInitFlags flags)
+{
+  return backend(this)->createWindow(
+      title, starting_pixel_width, starting_pixel_height, flags);
+}
+
+Window * UISystem::createMainWindow(const char *title,
+                                    i32 starting_pixel_width,
+                                    i32 starting_pixel_height,
+                                    WindowInitFlags flags)
+{
+  return backend(this)->createMainWindow(
+      title, starting_pixel_width, starting_pixel_height, flags);
+}
+
+void UISystem::destroyWindow(Window *window)
+{
+  return backend(this)->destroyWindow(window);
+}
+
+void UISystem::destroyMainWindow()
+{
+  return backend(this)->destroyMainWindow();
+}
+
+Window * UISystem::getMainWindow()
+{
+  return &backend(this)->mainWindow;
+}
+
+void UISystem::enableRawMouseInput(Window *window)
+{
+  backend(this)->enableRawMouseInput(window);
+}
+
+void UISystem::disableRawMouseInput(Window *window)
+{
+  backend(this)->disableRawMouseInput(window);
+}
+
+void UISystem::beginTextEntry(
+    Window *window, Vector2 pos, float line_height)
+{
+  backend(this)->beginTextEntry(window, pos, line_height);
+}
+
+void UISystem::endTextEntry(Window *window)
+{
+  backend(this)->endTextEntry(window);
+}
+
+bool UISystem::processEvents()
+{
+  return backend(this)->processEvents();
+}
+
+UserInput & UISystem::inputState()
+{
+  return backend(this)->inputState;
+}
+
+UserInputEvents & UISystem::inputEvents()
+{
+  return backend(this)->inputEvents;
+}
+
+const char * UISystem::inputText()
+{
+  return backend(this)->inputText;
+}
+
+GPULib * UISystem::gpuLib()
+{
+  return backend(this)->gpuLib;
+}
+
+}

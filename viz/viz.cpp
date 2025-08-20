@@ -1,0 +1,694 @@
+#include "viz.hpp"
+#include <assert.h>
+#include <filesystem>
+#include <rt/math.hpp>
+
+#include <gas/gas_imgui.hpp>
+
+#include <sim/backend.hpp>
+#include <scene/urdf.hpp>
+#include <scene/import.hpp>
+
+#include "bot-viz-shaders.hpp"
+#include "shader_host.hpp"
+
+namespace bot {
+
+static constexpr inline TextureFormat DEPTH_TEXTURE_FMT =
+  TextureFormat::Depth32_Float;
+
+static std::filesystem::path getShaderDir(ShaderByteCodeType type)
+{
+  std::filesystem::path shader_dir = BOT_SHADERS_OUT_DIR;
+  switch (type) {
+    case ShaderByteCodeType::SPIRV: shader_dir /= "spirv"; break;
+    case ShaderByteCodeType::WGSL: shader_dir /= "wgsl"; break;
+    case ShaderByteCodeType::MTLLib: shader_dir /= "mtl"; break;
+    case ShaderByteCodeType::DXIL: shader_dir /= "dxil"; break;
+    default: BOT_UNREACHABLE(); break;
+  }
+  
+  return shader_dir;
+}
+
+static Scene loadModels(GPUDevice *gpu, GPUQueue tx_queue,
+                       ImportedRenderAssets *assets)
+{
+  Buffer geo_buffer;
+  std::vector<RenderMesh> render_meshes;
+  std::vector<RenderObject> render_objects;
+  {
+    auto &src_objs = assets->objects;
+
+    u32 total_num_geo_bytes = 0;
+    for (const auto &src_obj : assets->objects) {
+      for (const auto &src_mesh : src_obj.meshes) {
+        total_num_geo_bytes = roundUp(total_num_geo_bytes, (u32)sizeof(RenderVertex));
+        total_num_geo_bytes += sizeof(RenderVertex) * src_mesh.numVertices;
+        total_num_geo_bytes += sizeof(u32) * src_mesh.numFaces * 3;
+      }
+    }
+
+    using enum BufferUsage;
+    
+    Buffer staging = gpu->createStagingBuffer(total_num_geo_bytes);
+    geo_buffer = gpu->createBuffer({
+      .numBytes = total_num_geo_bytes,
+      .usage = DrawVertex | DrawIndex | CopyDst,
+    });
+
+    u8 *staging_ptr;
+    gpu->prepareStagingBuffers(1, &staging, (void **)&staging_ptr);
+
+    u32 cur_buf_offset = 0;
+    for (const auto &src_obj : src_objs) {
+      render_objects.push_back({(u32)render_meshes.size(), (u32)src_obj.meshes.size()});
+
+      for (const auto &src_mesh : src_obj.meshes) {
+        cur_buf_offset = roundUp(cur_buf_offset, (u32)sizeof(RenderVertex));
+        u32 vertex_offset = cur_buf_offset / sizeof(RenderVertex);
+
+        RenderVertex *vertex_staging = (RenderVertex *)(staging_ptr + cur_buf_offset);
+
+        for (i32 i = 0; i < (i32)src_mesh.numVertices; i++) {
+          vertex_staging[i] = RenderVertex {
+            .pos = src_mesh.positions[i],
+            .normal = src_mesh.normals == nullptr ? WORLD_UP : src_mesh.normals[i],
+            .uv = src_mesh.uvs == nullptr ? Vector2(0, 0) : src_mesh.uvs[i],
+          };
+        }
+
+        cur_buf_offset += sizeof(RenderVertex) * src_mesh.numVertices;
+
+        u32 index_offset = cur_buf_offset / sizeof(u32);
+        u32 *indices_staging = (u32 *)(staging_ptr + cur_buf_offset);
+
+        u32 num_index_bytes = sizeof(u32) * src_mesh.numFaces * 3;
+        memcpy(indices_staging, src_mesh.indices, num_index_bytes);
+        cur_buf_offset += num_index_bytes;
+
+        render_meshes.push_back({
+          .vertexOffset = vertex_offset,
+          .indexOffset = index_offset, 
+          .numTriangles = src_mesh.numFaces,
+          .materialIndex = src_mesh.materialIdx == 0xFFFF'FFFF ? 0 :
+            (u32)src_mesh.materialIdx,
+        });
+      }
+    }
+    chk(cur_buf_offset == total_num_geo_bytes);
+
+    gpu->flushStagingBuffers(1, &staging);
+
+    gpu->waitUntilReady(tx_queue);
+
+    CommandEncoder upload_enc = gpu->createCommandEncoder(tx_queue);
+    upload_enc.beginEncoding();
+
+    CopyPassEncoder copy_enc = upload_enc.beginCopyPass();
+
+    copy_enc.copyBufferToBuffer(staging, geo_buffer, 0, 0, total_num_geo_bytes);
+
+    upload_enc.endCopyPass(copy_enc);
+    upload_enc.endEncoding();
+
+    gpu->submit(tx_queue, upload_enc);
+    gpu->waitUntilWorkFinished(tx_queue);
+
+    gpu->destroyCommandEncoder(upload_enc);
+    gpu->destroyStagingBuffer(staging);
+  }
+
+  return {
+    .geoBuffer = geo_buffer,
+    .renderMeshes = std::move(render_meshes),
+    .renderObjects = std::move(render_objects),
+  };
+}
+
+void Viz::initSwapchain(Surface surface)
+{
+  SwapchainProperties swapchain_properties;
+  swapchain = gpu->createSwapchain(
+    surface, { SwapchainFormat::SDR_SRGB, SwapchainFormat::SDR_UNorm },
+    &swapchain_properties);
+  swapchainFormat = swapchain_properties.format;
+
+  windowWidth = surface.width;
+  windowHeight = surface.height;
+}
+
+void Viz::cleanupSwapchain()
+{
+  gpu->destroySwapchain(swapchain);
+  swapchainFormat = TextureFormat::None;
+  windowWidth = 0;
+  windowHeight = 0;
+}
+
+void Viz::initSamplers()
+{
+  bilinearRepeatSampler = gpu->createSampler({
+    .addressMode = SamplerAddressMode::Repeat,
+  });
+}
+
+void Viz::cleanupSamplers()
+{
+  gpu->destroySampler(bilinearRepeatSampler);
+}
+
+void Viz::initParamBlockTypes()
+{
+  globalDataPBType = gpu->createParamBlockType({
+    .uuid = "global_data_pb_type"_to_uuid,
+    .buffers = {
+      {
+        .type = BufferBindingType::Uniform,
+      },
+    },
+  });
+
+  tonemapPBType = gpu->createParamBlockType({
+    .uuid = "final_pass_input_pb_type"_to_uuid,
+    .textures = {
+      { .shaderUsage = ShaderStage::Fragment },
+    },
+    .samplers = {
+      { .type = SamplerBindingType::Filtering },
+    },
+  });
+}
+
+void Viz::cleanupParamBlockTypes()
+{
+  gpu->destroyParamBlockType(tonemapPBType);
+  gpu->destroyParamBlockType(globalDataPBType);
+}
+
+void Viz::initPassInterfaces()
+{
+  hdrPassInterface = gpu->createRasterPassInterface({
+    .uuid = "hdr_raster_pass"_to_uuid,
+    .depthAttachment = {
+      .format = DEPTH_TEXTURE_FMT,
+      .loadMode = AttachmentLoadMode::Clear,
+    },
+    .colorAttachments = {
+      {
+        .format = hdrRenderFormat,
+        .loadMode = AttachmentLoadMode::Clear,
+      },
+    },
+  });
+
+  finalPassInterface = gpu->createRasterPassInterface({
+    .uuid = "final_raster_pass"_to_uuid,
+    .depthAttachment = {
+      .format = DEPTH_TEXTURE_FMT,
+      .loadMode = AttachmentLoadMode::Clear,
+    },
+    .colorAttachments = {
+      {
+        .format = swapchainFormat,
+        .loadMode = AttachmentLoadMode::Clear,
+      },
+    },
+  });
+}
+
+void Viz::cleanupPassInterfaces()
+{
+  gpu->destroyRasterPassInterface(finalPassInterface);
+  gpu->destroyRasterPassInterface(hdrPassInterface);
+}
+
+void Viz::initFrameInputs()
+{
+  for (i32 i = 0; i < Viz::NUM_FRAMES_IN_FLIGHT; i++) {
+    FrameInput &input = frames[i].input;
+    input.globalDataBuffer = gpu->createBuffer({
+      .numBytes = sizeof(GlobalPassData),
+      .usage = BufferUsage::CopyDst | BufferUsage::ShaderUniform,
+    });
+
+    input.globalDataPB = gpu->createParamBlock({
+      .typeID = globalDataPBType,
+      .buffers = {
+        {
+          .buffer = input.globalDataBuffer
+        },
+      },
+    });
+  }
+}
+
+void Viz::cleanupFrameInputs()
+{
+  for (i32 i = 0; i < Viz::NUM_FRAMES_IN_FLIGHT; i++) {
+    FrameInput &input = frames[i].input;
+    gpu->destroyParamBlock(input.globalDataPB);
+    gpu->destroyBuffer(input.globalDataBuffer);
+  }
+}
+
+void Viz::initRenderFrames()
+{
+  for (i32 i = 0; i < Viz::NUM_FRAMES_IN_FLIGHT; i++) {
+    RenderFrame &frame = frames[i].render;
+
+    frame.depth = gpu->createTexture({
+      .format = DEPTH_TEXTURE_FMT,
+      .width = (u16)windowWidth,
+      .height = (u16)windowHeight,
+      .usage = TextureUsage::DepthAttachment,
+    });
+
+    frame.hdr = gpu->createTexture({
+      .format = hdrRenderFormat,
+      .width = (u16)windowWidth,
+      .height = (u16)windowHeight,
+      .usage = TextureUsage::ColorAttachment | TextureUsage::ShaderSampled,
+    });
+
+    frame.hdrPass = gpu->createRasterPass({
+      .interface = hdrPassInterface,
+      .depthAttachment = frame.depth,
+      .colorAttachments = { frame.hdr },
+    });
+
+    frame.finalPass = gpu->createRasterPass({
+      .interface = finalPassInterface,
+      .depthAttachment = frame.depth,
+      .colorAttachments = { swapchain.proxyAttachment() },
+    });
+
+    frame.tonemapPB = gpu->createParamBlock({
+      .typeID = tonemapPBType,
+      .textures = {
+        frame.hdr,
+      },
+      .samplers = {
+        bilinearRepeatSampler,
+      },
+    });
+  }
+}
+
+void Viz::cleanupRenderFrames()
+{
+  for (i32 i = 0; i < Viz::NUM_FRAMES_IN_FLIGHT; i++) {
+    RenderFrame &frame = frames[i].render;
+
+    gpu->destroyParamBlock(frame.tonemapPB);
+
+    gpu->destroyRasterPass(frame.finalPass);
+    gpu->destroyRasterPass(frame.hdrPass);
+    gpu->destroyTexture(frame.hdr);
+    gpu->destroyTexture(frame.depth);
+  }
+}
+
+void Viz::loadShaders()
+{
+  using enum VertexFormat;
+
+  VizShaders shaders;
+  StackAlloc alloc;
+
+  std::filesystem::path shader_dir = 
+    getShaderDir(gpuLib->backendShaderByteCodeType());
+
+  chk(shaders.load(alloc, (shader_dir / "bot-viz-shaders.shader_blob").c_str()));
+
+  objectShader = gpu->createRasterShader({
+    .byteCode = shaders.getByteCode(ShaderID::Objects),
+    .vertexEntry = "vertMain",
+    .fragmentEntry = "fragMain",
+    .rasterPass = hdrPassInterface,
+    .paramBlockTypes = { globalDataPBType },
+    .numPerDrawBytes = sizeof(ObjectPerDraw),
+    .vertexBuffers = {{
+      .stride = sizeof(RenderVertex), .attributes = {
+        { .offset = offsetof(RenderVertex, pos), .format = Vec3_F32 },
+        { .offset = offsetof(RenderVertex, normal),  .format = Vec3_F32 },
+        { .offset = offsetof(RenderVertex, uv), .format = Vec2_F32 },
+      },
+    }},
+    .rasterConfig = {
+      .depthCompare = DepthCompare::GreaterOrEqual,
+    },
+  });
+
+  tonemapShader = gpu->createRasterShader({
+    .byteCode = shaders.getByteCode(ShaderID::Tonemap),
+    .vertexEntry = "vertMain",
+    .fragmentEntry = "fragMain",
+    .rasterPass = finalPassInterface,
+    .paramBlockTypes = { tonemapPBType },
+    .numPerDrawBytes = 0,
+    .vertexBuffers = {},
+    .rasterConfig = {
+      .depthCompare = DepthCompare::Disabled,
+      .writeDepth = false,
+      .cullMode = CullMode::None,
+    },
+  });
+}
+
+void Viz::cleanupShaders()
+{
+  gpu->destroyRasterShader(tonemapShader);
+  gpu->destroyRasterShader(objectShader);
+}
+
+void Viz::init(GPULib *gpu_lib, GPUDevice *gpu_in, Surface surface,
+               Backend *be, ImportedRenderAssets *assets,
+               BridgeData<RenderBridge> *render_bridge)
+{
+  gpuLib = gpu_lib;
+  gpu = gpu_in;
+  mainQueue = gpu->getMainQueue();
+  renderBridge = render_bridge;
+  backend = be;
+
+  initSwapchain(surface);
+
+  if ((gpu->getSupportedFeatures() & GPUFeatures::RenderableRG11B10_Float) !=
+      GPUFeatures::None) {
+    hdrRenderFormat = TextureFormat::RG11B10_Float;
+  } else {
+    hdrRenderFormat = TextureFormat::RGBA16_Float;
+  }
+
+  initSamplers();
+
+  initParamBlockTypes();
+  initPassInterfaces();
+
+  initFrameInputs();
+  initRenderFrames();
+
+  loadShaders();
+  
+  ImGuiSystem::init(gpu, mainQueue, finalPassInterface,
+    getShaderDir(gpuLib->backendShaderByteCodeType()).c_str(),
+    (std::filesystem::path(BOT_DATA_DIR) / "imgui_font.ttf").c_str(),
+    12.f);
+
+  frameEnc = gpu->createCommandEncoder(mainQueue);
+
+  scene = loadModels(gpu, mainQueue, assets);
+}
+
+void Viz::shutdown()
+{
+  gpu->waitUntilWorkFinished(mainQueue);
+
+  gpu->destroyCommandEncoder(frameEnc);
+
+  ImGuiSystem::shutdown(gpu);
+
+  cleanupShaders();
+
+  cleanupRenderFrames();
+  cleanupFrameInputs();
+
+  cleanupPassInterfaces();
+  cleanupParamBlockTypes();
+
+  cleanupSamplers();
+
+  cleanupSwapchain();
+
+  gpu = nullptr;
+  gpuLib = nullptr;
+}
+
+void Viz::resize(Surface new_surface)
+{
+  // FIXME
+  gpu->waitUntilWorkFinished(mainQueue);
+
+  cleanupRenderFrames();
+  cleanupSwapchain();
+
+  initSwapchain(new_surface);
+  initRenderFrames();
+
+  render();
+}
+
+static UIControl::Flag updateCamera(OrbitCam &cam, UserInput &input,
+                                    UserInputEvents &events, float delta_t)
+{
+  constexpr float MOUSE_SPEED = 1e-1f;
+  constexpr float SCROLL_SPEED = 2.f;
+  constexpr float CAM_MOVE_SPEED = 5.f;
+
+  UIControl::Flag result = UIControl::None;
+  Vector2 mouse_delta = events.mouseDelta();
+  Vector2 mouse_scroll = events.mouseScroll();
+
+  if (input.isDown(InputID::MouseRight) || input.isDown(InputID::Shift)) {
+    result |= UIControl::RawMouseMode;
+
+    cam.azimuth -= mouse_delta.y * MOUSE_SPEED * delta_t;
+    cam.heading += mouse_delta.x * MOUSE_SPEED * delta_t;
+    cam.azimuth = std::clamp(cam.azimuth, -0.49f * PI, 0.49f * PI);
+
+    while (cam.heading > PI) {
+      cam.heading -= 2.f * PI;
+    }
+    while (cam.heading < -PI) {
+      cam.heading += 2.f * PI;
+    }
+  }
+
+  if (mouse_scroll.y != 0.f) {
+    float zoom_change = -mouse_scroll.y * SCROLL_SPEED * delta_t;
+    if (zoom_change < 0.f) {
+      cam.zoom /= 1.f - zoom_change;
+    }
+    if (zoom_change > 0.f) {
+      cam.zoom *= 1.f + zoom_change;
+    }
+  }
+
+  cam.fwd = {
+    .x = cosf(cam.heading) * cos(cam.azimuth),
+    .y = sinf(cam.heading) * cosf(cam.azimuth),
+    .z = -sinf(cam.azimuth),
+  };
+
+  cam.right = normalize(cross(cam.fwd, WORLD_UP));
+  cam.up = normalize(cross(cam.right, cam.fwd));
+
+  Vector3 translate = Vector3::zero();
+
+  // Move the focus point.
+  if (input.isDown(InputID::W)) {
+    translate += cam.up;
+  }
+  if (input.isDown(InputID::A)) {
+    translate -= cam.right;
+  }
+  if (input.isDown(InputID::S)) {
+    translate -= cam.up;
+  }
+  if (input.isDown(InputID::D)) {
+    translate += cam.right;
+  }
+
+  cam.target += translate * CAM_MOVE_SPEED * delta_t;
+  cam.position = cam.target - cam.fwd * cam.zoom;
+
+  return result;
+}
+
+void Viz::buildImguiWidgets()
+{
+  ImGui::Begin("Debug");
+  ImGui::Text("hi");
+  ImGui::End();
+}
+
+UIControl Viz::updateUI(UserInput &input, UserInputEvents &events,
+                        const char *text_input, float ui_scale, float delta_t)
+{
+  UIControl ui_ctrl {};
+
+  ui_ctrl.flags |= updateCamera(cam, input, events, delta_t);
+
+  ImGuiSystem::UIControl imgui_ctrl = {};
+  ImGuiSystem::newFrame(input, events, windowWidth, windowHeight,
+                        ui_scale, delta_t, text_input, &imgui_ctrl);
+
+  buildImguiWidgets();
+
+  if ((imgui_ctrl.type & ImGuiSystem::UIControl::EnableIME)) {
+    ui_ctrl.flags |= UIControl::EnableIME;
+    ui_ctrl.imePos = imgui_ctrl.pos;
+    ui_ctrl.imeLineHeight = imgui_ctrl.lineHeight;
+  }
+
+  if ((imgui_ctrl.type & ImGuiSystem::UIControl::DisableIME)) {
+    ui_ctrl.flags |= UIControl::DisableIME;
+  }
+
+  return ui_ctrl;
+}
+
+static void stageViewData(OrbitCam &cam,
+                          u32 render_width, u32 render_height,
+                          GlobalPassData *out)
+{
+  float aspect_ratio = (float)render_width / (float)render_height;
+
+  float fov_scale = 1.f / tanf(toRadians(cam.fov * 0.5f));
+
+  float screen_x_scale = fov_scale / aspect_ratio;
+  float screen_y_scale = fov_scale;
+
+  out->view.camTxfm.rows[0] = Vector4::fromVec3W(cam.right, cam.position.x);
+  out->view.camTxfm.rows[1] = Vector4::fromVec3W(cam.up, cam.position.y);
+  out->view.camTxfm.rows[2] = Vector4::fromVec3W(cam.fwd, cam.position.z);
+
+  out->view.fbDims = { render_width, render_height };
+  out->view.screenScale = Vector2(screen_x_scale, screen_y_scale);
+  out->view.zNear = 1.f;
+}
+
+static NonUniformScaleObjectTransform computeNonUniformScaleTxfm(
+    Vector3 t, Quat r, Diag3x3 s)
+{
+  float x2 = r.x * r.x;
+  float y2 = r.y * r.y;
+  float z2 = r.z * r.z;
+  float xz = r.x * r.z;
+  float xy = r.x * r.y;
+  float yz = r.y * r.z;
+  float wx = r.w * r.x;
+  float wy = r.w * r.y;
+  float wz = r.w * r.z;
+
+  float y2z2 = y2 + z2;
+  float x2z2 = x2 + z2;
+  float x2y2 = x2 + y2;
+
+  Diag3x3 ds = 2.f * s;
+  Diag3x3 i_s = 1.f / s;
+  Diag3x3 i_ds = 2.f * i_s;
+
+  NonUniformScaleObjectTransform out;
+  out.o2w = {{
+    { s.d0 - ds.d0 * y2z2, ds.d1 * (xy - wz), ds.d2 * (xz + wy), t.x },
+    { ds.d0 * (xy + wz), s.d1 - ds.d1 * x2z2, ds.d2 * (yz - wx), t.y },
+    { ds.d0 * (xz - wy), ds.d1 * (yz + wx), s.d2 - ds.d2 * x2y2, t.z },
+  }};
+
+  Vector3 w2o_r0 = 
+      { i_s.d0 - i_ds.d0 * y2z2, i_ds.d1 * (xy + wz), ds.d2 * (xz - wy) };
+  Vector3 w2o_r1 =
+      { i_ds.d0 * (xy - wz), i_s.d1 - i_ds.d1 * x2z2, i_ds.d2 * (yz + wx) };
+  Vector3 w2o_r2 =
+      { i_ds.d0 * (xz + wy), i_ds.d1 * (yz - wx), i_s.d2 - i_ds.d2 * x2y2 };
+
+  out.w2o = {{
+    Vector4::fromVec3W(w2o_r0, -dot(w2o_r0, t)),
+    Vector4::fromVec3W(w2o_r1, -dot(w2o_r1, t)),
+    Vector4::fromVec3W(w2o_r2, -dot(w2o_r2, t)),
+  }};
+
+  return out;
+}
+
+void Viz::renderGeo(FrameState &frame, RasterPassEncoder &enc)
+{
+  auto render_bridge = renderBridge->sync();
+
+  auto instances_bridge = backendBridgeBuffer<InstanceData>(
+      backend, render_bridge->instances);
+  InstanceData *instances = instances_bridge.sync();
+
+  enc.setShader(objectShader);
+  enc.setParamBlock(0, frame.input.globalDataPB);
+  enc.setVertexBuffer(0, scene.geoBuffer);
+  enc.setIndexBufferU32(scene.geoBuffer);
+
+  for (u32 inst_idx = 0; inst_idx < render_bridge->numInstances; ++inst_idx) {
+    InstanceData inst = instances[inst_idx];
+    
+    RenderObject obj = scene.renderObjects[inst.objectID];
+
+    NonUniformScaleObjectTransform txfm =
+      computeNonUniformScaleTxfm(inst.position, inst.rotation, inst.scale);
+
+    enc.drawData(ObjectPerDraw {
+      .txfm = txfm,
+    });
+
+    for (u32 mesh_idx = 0; mesh_idx < obj.numMeshes; mesh_idx++) {
+      RenderMesh mesh = scene.renderMeshes[obj.meshOffset + mesh_idx];
+      enc.drawIndexed(mesh.vertexOffset, mesh.indexOffset, mesh.numTriangles);
+    }
+  }
+}
+
+void Viz::render()
+{
+  // Step worlds
+  backendSyncStepWorlds(backend);
+
+  gpu->waitUntilReady(mainQueue);
+
+  FrameState &frame = frames[curFrameIdx];
+  curFrameIdx = (curFrameIdx + 1) % NUM_FRAMES_IN_FLIGHT;
+  
+  frameEnc.beginEncoding();
+
+  {
+    CopyPassEncoder enc = frameEnc.beginCopyPass();
+
+    MappedTmpBuffer global_pass_data_staging = enc.tmpBuffer(
+        sizeof(GlobalPassData));
+
+    GlobalPassData *global_pass_data_staging_ptr =
+      (GlobalPassData *)global_pass_data_staging.ptr;
+
+    stageViewData(cam, windowWidth, windowHeight, global_pass_data_staging_ptr);
+
+    enc.copyBufferToBuffer(
+      global_pass_data_staging.buffer, frame.input.globalDataBuffer,
+      global_pass_data_staging.offset, 0, sizeof(GlobalPassData));
+
+    frameEnc.endCopyPass(enc);
+  }
+
+  {
+    RasterPassEncoder enc = frameEnc.beginRasterPass(frame.render.hdrPass);
+    renderGeo(frame, enc);
+    frameEnc.endRasterPass(enc);
+  }
+
+  auto [swapchain_tex, swapchain_status] = gpu->acquireSwapchainImage(swapchain);
+  assert(swapchain_status == SwapchainStatus::Valid);
+
+  {
+    RasterPassEncoder enc = frameEnc.beginRasterPass(frame.render.finalPass);
+
+    enc.setShader(tonemapShader);
+    enc.setParamBlock(0, frame.render.tonemapPB);
+    enc.draw(0, 1);
+
+    ImGuiSystem::render(enc);
+
+    frameEnc.endRasterPass(enc);
+  }
+
+  frameEnc.endEncoding();
+  gpu->submit(mainQueue, frameEnc);
+  gpu->presentSwapchainImage(swapchain);
+}
+
+}

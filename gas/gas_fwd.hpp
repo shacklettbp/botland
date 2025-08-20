@@ -1,0 +1,26 @@
+#pragma once
+
+namespace bot::gas {
+
+class RasterPassEncoder;
+class ComputePassEncoder;
+class CopyPassEncoder;
+class CommandEncoder;
+class GPUDevice;
+class ShaderCompiler;
+class GPULib;
+class GPUAPI;
+
+struct Window;
+
+struct Texture;
+struct Sampler;
+struct Buffer;
+struct ParamBlockType;
+struct ParamBlock;
+struct RasterPassInterface;
+struct RasterPass;
+struct RasterShader;
+struct ComputeShader;
+
+}

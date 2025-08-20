@@ -1,0 +1,8 @@
+/build
+/em-build
+/build-debug
+/.vs
+/CMakeSettings.json
+/imgui.ini
+.cache
+compile_commands.json
