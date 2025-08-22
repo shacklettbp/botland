@@ -51,8 +51,6 @@ set(CMAKE_PDB_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/pdb)
 
 add_subdirectory(rt)
 
-add_subdirectory(scene)
-
 add_subdirectory(net)
 
 add_subdirectory(game)

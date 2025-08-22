@@ -10,8 +10,7 @@
 
 #include "geo.hpp"
 
-#include <sim/bridge.hpp>
-#include <sim/physics.hpp>
+#include "physics.hpp"
 
 namespace bot {
 

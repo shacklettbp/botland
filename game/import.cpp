@@ -1,4 +1,5 @@
-#include <scene/import.hpp>
+#include "import.hpp"
+
 #include <utility>
 #include <algorithm>
 
@@ -8,15 +9,15 @@
 
 #include <meshoptimizer.h>
 
-#include "obj.hpp"
-#include "stl.hpp"
+#include "import-obj.hpp"
+#include "import-stl.hpp"
 
 #ifdef BOT_GLTF_SUPPORT
-#include "gltf.hpp"
+#include "import-gltf.hpp"
 #endif
 
 #ifdef BOT_USD_SUPPORT
-#include "usd.hpp"
+#include "import-usd.hpp"
 #endif
 
 #include "rt/rt.hpp"
@@ -27,7 +28,7 @@
 
 namespace bot {
 
-struct FileLoaders {
+struct AssetLoaders {
   std::optional<OBJLoader> objLoader;
   std::optional<STLLoader> stlLoader;
 
@@ -45,7 +46,7 @@ static uint32_t importGeometry(
     const char * const path,
     Span<char> err_buf,
     bool one_object_per_asset,
-    FileLoaders &loaders)
+    AssetLoaders &loaders)
 {
   (void)one_object_per_asset;
 
@@ -126,7 +127,7 @@ struct RenderAssetImporter::Impl {
 
   ImportedRenderAssets imported;
 
-  FileLoaders loaders;
+  AssetLoaders loaders;
 
   static inline Impl * make(ImageImporter &&img_importer);
 
@@ -226,7 +227,7 @@ struct PhysicsAssetImporter::Impl {
   ImportedGeometryAssets importedGeometry;
   ImportedPhysicsAssets importedAssets;
 
-  FileLoaders loaders;
+  AssetLoaders loaders;
 
   static inline Impl * make();
 };

@@ -72,5 +72,4 @@ gas_add_shaders(
 
 target_link_libraries(gas_imgui PRIVATE gas_imgui_shaders)
 
-add_subdirectory(examples)
 add_subdirectory(test)
