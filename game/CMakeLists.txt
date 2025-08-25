@@ -7,6 +7,7 @@ add_library(bot-asset-import STATIC
 )
 
 target_link_libraries(bot-asset-import PRIVATE
+  bot-rt
   tinyxml2
   meshoptimizer
   fast_float
@@ -14,15 +15,8 @@ target_link_libraries(bot-asset-import PRIVATE
 )
 
 add_library(bot-sim STATIC
-  physics.hpp physics.cpp
-  collision.hpp collision.cpp
-  physics_narrowphase.cpp
-  physics_store.hpp
-  bvh.hpp bvh.inl bvh.cpp
-  render.hpp render.cpp
   sim.hpp sim.inl sim.cpp
   geo.hpp geo.cpp
-  prims.hpp prims.cpp
 )
 
 target_link_libraries(bot-sim PUBLIC
@@ -53,7 +47,7 @@ add_executable(backend_headless
   headless.cpp
 )
 target_link_libraries(backend_headless
-  PRIVATE bot-backend bot-scene)
+  PRIVATE bot-backend)
 
 target_compile_definitions(backend_headless PRIVATE
   -DBOT_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../data/"

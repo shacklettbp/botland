@@ -4,9 +4,6 @@
 #include <rt/math.hpp>
 #include <rt/host_print.hpp>
 
-#include "render.hpp"
-#include "physics.hpp"
-
 #ifdef BOT_CUDA_SUPPORT
 #include "rt/cuda_comm.hpp"
 #endif
@@ -29,10 +26,6 @@ struct World {
 
   u64 worldID = 0;
 
-  PhysicsWorld physics = {};
-  RenderWorld render = {};
-
-  BodyID bodyTest = {};
   float moveSpeed = 1.f;
 };
 
@@ -41,18 +34,6 @@ struct SimConfig {
   i32 numActionsPerAgent = 0;
   i32 numDOFSPerAgent = 0;
   i32 maxNumAgentsPerWorld = 0;
-  RenderBridge *renderBridge = nullptr;
-  ObjectManager *objManager = nullptr;
-};
-
-// For prefix sum test
-struct TestData {
-  int *bufferIn = nullptr;
-  int *bufferOut = nullptr;
-#if 0
-  void *tmpData = nullptr;
-  size_t tmpDataSize = 0;
-#endif
 };
 
 struct Sim {
@@ -65,8 +46,6 @@ struct Sim {
   i32 numActiveWorlds = 0;
 
   MLInterface ml = {};
-
-  TestData testData = {};
 };
 
 class SimRT : public Runtime {

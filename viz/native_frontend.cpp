@@ -3,9 +3,8 @@
 #include <gas/gas.hpp>
 #include <rt/types.hpp>
 #include <gas/gas_ui.hpp>
-#include <sim/backend.hpp>
-#include <scene/import.hpp>
 
+#include "game/backend.hpp"
 #include "viz.hpp"
 
 namespace bot {
@@ -57,19 +56,14 @@ struct Frontend {
 
   Backend *backend;
 
-  inline void init(Backend *,
-                   ImportedRenderAssets *render_assets,
-                   BridgeData<RenderBridge> *render_bridge);
+  inline void init(Backend *backend);
   inline void shutdown();
 
   inline void handleUIControl(UIControl ui_ctrl);
   inline void loop();
 };
 
-void Frontend::init(
-    Backend *be,
-    ImportedRenderAssets *render_assets,
-    BridgeData<RenderBridge> *render_bridge)
+void Frontend::init(Backend *be)
 {
   backend = be;
   ui_sys = UISystem::init({
@@ -77,11 +71,10 @@ void Frontend::init(
     .errorsAreFatal = true,
   });
   window = ui_sys->createMainWindow(
-    "RolloutDB Viz", 1920*2, 1080*2, WindowInitFlags::Resizable);
+    "Botland", 1920*2, 1080*2, WindowInitFlags::Resizable);
 
   GPULib *gpu_lib = ui_sys->gpuLib();
-  viz.init(gpu_lib, gpu_lib->createDevice(0, {window->surface}), window->surface,
-           be, render_assets, render_bridge);
+  viz.init(gpu_lib, gpu_lib->createDevice(0, {window->surface}), window->surface, be);
 }
 
 void Frontend::shutdown()
@@ -184,68 +177,18 @@ int main(int argc, const char *argv[])
       .gpuID = gpu_id,
       .memPoolSizeMB = 128,
     },
+    .sim = {
+      .numActiveWorlds = num_worlds,
+      .numActionsPerAgent = 4,
+      .numDOFSPerAgent = 6,
+      .maxNumAgentsPerWorld = 1,
+    },
   });
+
   Runtime rt = Runtime(backendRTStateHandle(backend), 0);
 
-  RenderAssetImporter render_importer;
-  { // Load render eassets
-    render_importer.importAsset(
-      (fs::path(BOT_DATA_DIR) / "cube_render.obj").string());
-  }
-
-  PhysicsAssetImporter physics_importer;
-  { // Load physics assets
-    physics_importer.importAsset(
-      (fs::path(BOT_DATA_DIR) / "cube_collision.obj").string());
-  }
-
-  ImportedRenderAssets &imported_render_assets = 
-    render_importer.getImportedAssets();
-
-  PhysicsAssetProcessor physics_processor(
-      physics_importer.getImportedAssets());
-
-  BridgeData<ObjectManager> physics_bridge = 
-    physics_processor.process(backend);
-
-  constexpr u32 MAX_NUM_CAMERAS = 4;
-  constexpr u32 MAX_NUM_INSTANCES = 1024;
-  constexpr u32 MAX_NUM_LIGHTS = 1;
-
-  auto render_bridge = backendBridgeData<RenderBridge>(backend);
-
-  { // Setup simulation parameters / shared state between host and sim
-    auto cameras = backendBridgeBuffer<PerspectiveCameraData>(
-        backend, MAX_NUM_CAMERAS);
-    auto instances = backendBridgeBuffer<InstanceData>(
-        backend, MAX_NUM_INSTANCES);
-    auto lights = backendBridgeBuffer<LightData>(
-        backend, MAX_NUM_LIGHTS);
-
-    RenderBridge bridge = {
-      .cameras = cameras.detach(),
-      .instances = instances.detach(),
-      .lights = lights.detach(),
-      .numCameras = 0,
-      .numInstances = 0,
-      .numLights = 0,
-      .worldID = 0,
-    };
-
-    render_bridge.commit(bridge);
-  }
-
-  backendStart(backend, SimConfig {
-    .numActiveWorlds = num_worlds,
-    .numActionsPerAgent = 4,
-    .numDOFSPerAgent = 6,
-    .maxNumAgentsPerWorld = 1,
-    .renderBridge = render_bridge.get(),
-    .objManager = physics_bridge.get(),
-  });
-
   Frontend frontend;
-  frontend.init(backend, &imported_render_assets, &render_bridge);
+  frontend.init(backend);
   frontend.loop();
   frontend.shutdown();
 

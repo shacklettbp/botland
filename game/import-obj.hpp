@@ -14,7 +14,7 @@ struct OBJLoader {
   std::unique_ptr<Impl> impl_;
 
   bool load(const char *path,
-            ImportedGeometryAssets &imported_assets);
+            ImportedAssets &imported_assets);
 };
 
 }

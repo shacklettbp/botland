@@ -9,19 +9,17 @@
 #include "rt/cuda_utils.hpp"
 #endif
 
-#include "bridge.hpp"
-
 namespace bot {
 
 struct BackendConfig {
   RuntimeConfig rt = {};
   CUDAConfig cuda = {};
+  SimConfig sim = {};
 };
 
 struct Backend;
 
 Backend * backendInit(BackendConfig cfg);
-void backendStart(Backend *backend, SimConfig sim_cfg);
 void backendShutdown(Backend *backend);
 
 RuntimeState * backendRuntimeState(Backend *backend);

@@ -1,4 +1,4 @@
-#include "stl.hpp"
+#include "import-stl.hpp"
 
 #include <fstream>
 #include <meshoptimizer.h>
@@ -18,7 +18,7 @@ STLLoader::~STLLoader()
 {
 }
 
-bool STLLoader::load(const char *path, ImportedGeometryAssets &imported_assets)
+bool STLLoader::load(const char *path, ImportedAssets &imported_assets)
 {
   std::string file_path(path);
 

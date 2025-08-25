@@ -5,12 +5,10 @@
 
 #include <gas/gas_imgui.hpp>
 
-#include <sim/backend.hpp>
-#include <scene/urdf.hpp>
-#include <scene/import.hpp>
-
 #include "bot-viz-shaders.hpp"
 #include "shader_host.hpp"
+
+#include "game/import.hpp"
 
 namespace bot {
 
@@ -31,17 +29,25 @@ static std::filesystem::path getShaderDir(ShaderByteCodeType type)
   return shader_dir;
 }
 
-static Scene loadModels(GPUDevice *gpu, GPUQueue tx_queue,
-                       ImportedRenderAssets *assets)
+static Scene loadModels(GPUDevice *gpu, GPUQueue tx_queue)
 {
+  namespace fs = std::filesystem;
+
+  AssetImporter importer;
+
+  importer.importAsset(
+      (fs::path(BOT_DATA_DIR) / "cube_render.obj").string());
+
+  ImportedAssets &assets = importer.getImportedAssets();
+
   Buffer geo_buffer;
   std::vector<RenderMesh> render_meshes;
   std::vector<RenderObject> render_objects;
   {
-    auto &src_objs = assets->objects;
+    auto &src_objs = assets.objects;
 
     u32 total_num_geo_bytes = 0;
-    for (const auto &src_obj : assets->objects) {
+    for (const auto &src_obj : assets.objects) {
       for (const auto &src_mesh : src_obj.meshes) {
         total_num_geo_bytes = roundUp(total_num_geo_bytes, (u32)sizeof(RenderVertex));
         total_num_geo_bytes += sizeof(RenderVertex) * src_mesh.numVertices;
@@ -362,14 +368,11 @@ void Viz::cleanupShaders()
   gpu->destroyRasterShader(objectShader);
 }
 
-void Viz::init(GPULib *gpu_lib, GPUDevice *gpu_in, Surface surface,
-               Backend *be, ImportedRenderAssets *assets,
-               BridgeData<RenderBridge> *render_bridge)
+void Viz::init(GPULib *gpu_lib, GPUDevice *gpu_in, Surface surface, Backend *be)
 {
   gpuLib = gpu_lib;
   gpu = gpu_in;
   mainQueue = gpu->getMainQueue();
-  renderBridge = render_bridge;
   backend = be;
 
   initSwapchain(surface);
@@ -398,7 +401,7 @@ void Viz::init(GPULib *gpu_lib, GPUDevice *gpu_in, Surface surface,
 
   frameEnc = gpu->createCommandEncoder(mainQueue);
 
-  scene = loadModels(gpu, mainQueue, assets);
+  scene = loadModels(gpu, mainQueue);
 }
 
 void Viz::shutdown()
@@ -605,8 +608,7 @@ static NonUniformScaleObjectTransform computeNonUniformScaleTxfm(
 
 void Viz::renderGeo(FrameState &frame, RasterPassEncoder &enc)
 {
-  auto render_bridge = renderBridge->sync();
-
+#if 0
   auto instances_bridge = backendBridgeBuffer<InstanceData>(
       backend, render_bridge->instances);
   InstanceData *instances = instances_bridge.sync();
@@ -633,6 +635,7 @@ void Viz::renderGeo(FrameState &frame, RasterPassEncoder &enc)
       enc.drawIndexed(mesh.vertexOffset, mesh.indexOffset, mesh.numTriangles);
     }
   }
+#endif
 }
 
 void Viz::render()

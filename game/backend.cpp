@@ -28,7 +28,6 @@ struct Backend {
   MemArena globalArena = {};
 
   BackendConfig cfg = {};
-  SimConfig simCfg = {};
 
 #ifdef BOT_CUDA_SUPPORT
   CUDABackend cuda;
@@ -136,27 +135,20 @@ Backend * backendInit(BackendConfig cfg)
 
   be->cfg = cfg;
 
-  return be;
-}
-
-void backendStart(Backend *backend, SimConfig sim_cfg)
-{
-  Runtime rt(backend->rtStateHandle, 0);
-
-  backend->simCfg = sim_cfg;
-
-  if (backend->cfg.cuda.gpuID != -1) {
+  if (be->cfg.cuda.gpuID != -1) {
 #ifdef BOT_CUDA_SUPPORT
-    backend->cuda = initCUDABackend(
-        rt, backend->cfg, sim_cfg, 
-        backend->globalArena, &backend->sim);
+    be->cuda = initCUDABackend(
+        rt, be->cfg, cfg.sim, 
+        be->globalArena, &be->sim);
 #else
-    FATAL("Trying to use CUDA backend when build wasn't "
+    FATAL("Trying to use CUDA be when build wasn't "
           "compiled with CUDA support");
 #endif
   } else {
-    backend->sim = initCPUBackend(rt, backend->cfg, sim_cfg);
+    be->sim = initCPUBackend(rt, be->cfg, cfg.sim);
   }
+
+  return be;
 }
 
 void backendSyncStepWorlds(Backend *backend)

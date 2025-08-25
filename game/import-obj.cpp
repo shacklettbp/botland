@@ -50,9 +50,9 @@ struct OBJLoader::Impl {
 
   void recordError(const char *fmt_string, ...) const;
 
-  bool commitMesh(ImportedGeometryAssets &out_assets, const char *name);
+  bool commitMesh(ImportedAssets &out_assets, const char *name);
 
-  bool load(const char *path, ImportedGeometryAssets &imported_assets);
+  bool load(const char *path, ImportedAssets &imported_assets);
 
   static constexpr inline CountT reserve_elems = 128;
 };
@@ -295,7 +295,7 @@ void OBJLoader::Impl::recordError(const char *fmt_string, ...) const
   }
 }
 
-bool OBJLoader::Impl::commitMesh(ImportedGeometryAssets &out_assets, const char *name)
+bool OBJLoader::Impl::commitMesh(ImportedAssets &out_assets, const char *name)
 {
   if (curIndices.size() == 0) {
     if (curPositions.size() > 0 || curNormals.size() > 0 ||
@@ -476,7 +476,7 @@ bool OBJLoader::Impl::commitMesh(ImportedGeometryAssets &out_assets, const char 
   return true;
 }
 
-bool OBJLoader::Impl::load(const char *path, ImportedGeometryAssets &imported_assets)
+bool OBJLoader::Impl::load(const char *path, ImportedAssets &imported_assets)
 {
   using std::string_view;
 
@@ -592,7 +592,7 @@ OBJLoader::OBJLoader(Span<char> err_buf)
 
 OBJLoader::~OBJLoader() {}
 
-bool OBJLoader::load(const char *path, ImportedGeometryAssets &imported_assets)
+bool OBJLoader::load(const char *path, ImportedAssets &imported_assets)
 {
   return impl_->load(path, imported_assets);
 }

@@ -3,11 +3,8 @@
 #include <gas/gas.hpp>
 #include <gas/gas_ui.hpp>
 #include <gas/gas_imgui.hpp>
-#include <scene/scene.hpp>
-#include <scene/import.hpp>
 
-#include <sim/render.hpp>
-#include <sim/backend.hpp>
+#include "game/backend.hpp"
 
 #include <vector>
 
@@ -121,12 +118,10 @@ struct Viz {
 
   Scene scene = {};
 
-  BridgeData<RenderBridge> *renderBridge = nullptr;
   Backend *backend = nullptr;
 
   void init(GPULib *gpu_lib, GPUDevice *gpu_in, Surface surface,
-            Backend *backend, ImportedRenderAssets *assets,
-            BridgeData<RenderBridge> *render_bridge);
+            Backend *backend);
   void shutdown();
 
   void resize(Surface surface);

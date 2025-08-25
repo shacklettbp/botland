@@ -10,31 +10,7 @@
 
 #include "geo.hpp"
 
-#include "physics.hpp"
-
 namespace bot {
-
-struct SourceCollisionPrimitive {
-  struct HullInput {
-    uint32_t hullIDX;
-
-    // For debugging
-    const char *name;
-  };
-
-  CollisionPrimitive::Type type;
-  union {
-    CollisionPrimitive::Sphere sphere;
-    CollisionPrimitive::Box box;
-    CollisionPrimitive::Plane plane;
-    CollisionPrimitive::Capsule capsule;
-    HullInput hullInput;
-  };
-};
-
-struct SourceCollisionObject {
-  Span<const SourceCollisionPrimitive> prims;
-};
 
 struct SourceMesh {
   Vector3 *positions;
@@ -120,7 +96,7 @@ private:
   std::unique_ptr<Impl> impl_;
 };
 
-struct ImportedGeometryAssets {
+struct ImportedAssets {
   struct GeometryData {
     std::vector<std::vector<Vector3>> positionArrays;
     std::vector<std::vector<Vector3>> normalArrays;
@@ -139,19 +115,17 @@ struct ImportedGeometryAssets {
   std::vector<SourceTexture> textures;
 };
 
-using ImportedRenderAssets = ImportedGeometryAssets;
-
 // This is purely for importing render assets
-class RenderAssetImporter {
+class AssetImporter {
 public:
-  RenderAssetImporter();
-  RenderAssetImporter(ImageImporter &&img_importer);
-  RenderAssetImporter(RenderAssetImporter &&);
-  ~RenderAssetImporter();
+  AssetImporter();
+  AssetImporter(ImageImporter &&img_importer);
+  AssetImporter(AssetImporter &&);
+  ~AssetImporter();
 
   ImageImporter & imageImporter();
 
-  ImportedRenderAssets & getImportedAssets();
+  ImportedAssets & getImportedAssets();
   
   // Returns index of the asset. We can also support other forms of importing.
   // Like importing directly from a buffer of vertices or stuff which
@@ -165,83 +139,6 @@ public:
       const std::string &asset_path,
       Span<char> err_buf = { nullptr, 0 },
       bool one_object = false);
-
-private:
-  struct Impl;
-  std::unique_ptr<Impl> impl_;
-};
-
-struct ConvexHullData {
-  HalfEdge *halfEdges;
-  uint32_t *faceBaseHalfEdges;
-  Plane *facePlanes;
-  Vector3 *vertices;
-
-  uint32_t numHalfEdges;
-  uint32_t numFaces;
-  uint32_t numVerts;
-};
-
-struct ProcessedPhysicsAssets {
-  void *buffer;
-  uint64_t bufferSize;
-
-  ConvexHullData hullData;
-  CollisionPrimitive *primitives;
-  AABB *primitiveAABBs;
-
-  AABB *objAABBs;
-  uint32_t *primOffsets;
-  uint32_t *primCounts;
-
-  uint32_t numConvexHulls;
-  uint32_t totalNumPrimitives;
-  uint32_t numObjs;
-};
-
-struct ImportedPhysicsAssets {
-  std::vector<SourceMesh> srcHulls;
-
-  std::vector<std::vector<SourceCollisionPrimitive>> primArrays;
-  std::vector<SourceCollisionObject> objs;
-};
-
-// This is purely for importing physics primitives
-class PhysicsAssetImporter {
-public:
-  PhysicsAssetImporter();
-  PhysicsAssetImporter(PhysicsAssetImporter &&);
-  ~PhysicsAssetImporter();
-
-  ImportedPhysicsAssets & getImportedAssets();
-
-  uint32_t importAsset(
-      const char * const asset_path,
-      Span<char> err_buf = { nullptr, 0 });
-
-  uint32_t importAsset(
-      const std::string &asset_path,
-      Span<char> err_buf = { nullptr, 0 });
-
-  // Directly import a primitive
-  uint32_t importAsset(
-      SourceCollisionPrimitive prim);
-
-private:
-  struct Impl;
-  std::unique_ptr<Impl> impl_;
-};
-
-class PhysicsAssetProcessor {
-public:
-  PhysicsAssetProcessor(ImportedPhysicsAssets &imported);
-  ~PhysicsAssetProcessor();
-
-  BridgeData<ObjectManager> process(
-      Backend *backend,
-      bool build_convex_hulls = false);
-
-  // ProcessedPhysicsAssets process(Runtime &rt, bool build_convex_hulls);
 
 private:
   struct Impl;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <rt/span.hpp>
-#include <scene/import.hpp>
+#include "import.hpp"
 
 namespace bot {
     
@@ -14,7 +14,7 @@ struct STLLoader {
 
   std::unique_ptr<Impl> impl_;
 
-  bool load(const char *path, ImportedGeometryAssets &imported_assets);
+  bool load(const char *path, ImportedAssets &imported_assets);
 };
 
 }
