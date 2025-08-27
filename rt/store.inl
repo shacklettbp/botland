@@ -152,7 +152,7 @@ void PersistentStore<ID, ChunkT, RefT>::init(Runtime &rt, MemArena &arena_in)
 }
 
 template <typename ID, typename ChunkT, typename RefT>
-ID PersistentStore<ID, ChunkT, RefT>::create(Runtime &rt)
+ID PersistentStore<ID, ChunkT, RefT>::create(Runtime &rt, u32 type_id)
 {
   if (freeList.chunk != 0) {
     ID actor = freeList;
@@ -160,6 +160,8 @@ ID PersistentStore<ID, ChunkT, RefT>::create(Runtime &rt)
     StoreChunk *chunk = getChunk(rt, actor);
 
     freeList = chunk->nextFrees[actor.offset];
+
+    actor.type = type_id;
 
     return actor;
   }
@@ -200,7 +202,7 @@ ID PersistentStore<ID, ChunkT, RefT>::create(Runtime &rt)
   u32 chunk_hdl = ((char *)chunk - (char *)rt.state()) / alignof(StoreChunk);
 
   return ID {
-    .type = 0, // FIXME
+    .type = type_id,
     .offset = (u32)offset,
     .gen = 0,
     .chunk = chunk_hdl,
@@ -270,6 +272,7 @@ PersistentStore<ID, ChunkT, RefT>::getChunk(Runtime &rt, ID id)
   return (StoreChunk *)((char *)rt.state() + (u64)id.chunk * alignof(StoreChunk));
 }
 
+#if 0
 template <typename ID, typename ChunkT, typename RefT>
 template <typename FnT>
 void PersistentStore<ID, ChunkT, RefT>::iterate(Runtime &rt, FnT fn)
@@ -300,142 +303,6 @@ void PersistentStore<ID, ChunkT, RefT>::iterate(Runtime &rt, FnT fn)
     }
   }
 }
-
-#ifdef BOT_GPU
-template <typename ID, typename ChunkT, typename RefT>
-template <typename FnT>
-void PersistentStore<ID, ChunkT, RefT>::warpIterateSync(Runtime &rt, FnT fn)
-{
-  i32 total_iters = numChunks * ChunkT::SIZE;
-
-  gpu_prims::warpLoopSync(total_iters,
-    [&](u32 iter) {
-      ID id = ID::none();
-      RefT ref = {};
-
-      if (iter != 0xFFFF'FFFF) {
-        i32 i = iter / ChunkT::SIZE;
-        i32 j = iter % ChunkT::SIZE;
-
-        StoreChunk *chunk = chunks[i];
-
-        bool active = (chunk->activeMask[j/32] & (1 << (j % 32)));
-
-        if (active) {
-          ref = chunk->user.get(j);
-
-          u32 chunk_hdl = ((char *)chunk - (char *)rt.state()) / alignof(StoreChunk);
-
-          id = {
-            .type = 0,
-            .offset = (u32)j,
-            .gen = chunk->gens[j],
-            .chunk = chunk_hdl
-          };
-        }
-      }
-
-      fn(id, ref);
-    });
-}
 #endif
-
-template <typename ID, typename ChunkT, typename RefT>
-ID PersistentStore<ID, ChunkT, RefT>::getID(Runtime &rt, u32 idx)
-{
-  i32 i = idx / ChunkT::SIZE;
-  i32 j = idx % ChunkT::SIZE;
-
-  StoreChunk *chunk = chunks[i];
-
-  bool active = (chunk->activeMask[j / 32] & (1<< (j % 32)));
-
-  if (active) {
-    u32 chunk_hdl = ((char *)chunk - (char *)rt.state()) / alignof(StoreChunk);
-
-    return ID {
-      .type = 0,
-      .offset = (u32)j,
-      .gen = chunk->gens[j],
-      .chunk = chunk_hdl
-    };
-  } else {
-    return ID::none();
-  }
-}
-
-template <typename ID, typename PStoreT>
-void CompactStore<ID, PStoreT>::init(
-    Runtime &rt,
-    u32 num_buckets,
-    MemArena &persistent_arena,
-    MemArena &tmp_arena)
-{
-  persistentArena = &persistent_arena;
-  tmpArena = &tmp_arena;
-  numBuckets = num_buckets;
-
-  buckets = rt.arenaAllocN<u32>(*persistentArena, numBuckets);
-}
-
-template <typename ID, typename PStoreT>
-template <typename FnT>
-void CompactStore<ID, PStoreT>::prefixSumTask(Runtime &rt, TaskExec &exec, FnT &&fn)
-{
-  exec.forEachTask(
-    rt, numBuckets, false, [&](i32 idx) {
-      PStoreT &pstore = fn(rt, idx);
-      buckets[idx] = pstore.size();
-    });
-
-#ifdef BOT_GPU
-  // TODO: Implement GPU version with CUB prefix sum
-  assert(false);
-#else
-  exec.serialTask(
-    rt, [&]() {
-      u32 total_num_items = 0;
-
-      for (u32 i = 0; i < numBuckets; ++i) {
-        u32 temp = buckets[i];
-        buckets[i] = total_num_items;
-        total_num_items += temp;
-      }
-
-      items = rt.arenaAllocN<Item>(total_num_items);
-    });
-#endif
-
-  exec.forEachTask(
-    rt, numBuckets, false, [&](i32 idx) {
-      PStoreT &pstore = fn(rt, idx);
-
-      u32 offset = 0;
-      i32 total_iters = pstore.numChunks * PStoreT::CHUNK_SIZE;
-
-      for (i32 iter = 0; iter < total_iters; ++iter) {
-        i32 i = iter / PStoreT::CHUNK_SIZE;
-        i32 j = iter % PStoreT::CHUNK_SIZE;
-
-        typename PStoreT::StoreChunk *chunk = pstore.chunks[i];
-
-        bool active = (chunk->activeMask[j/32] & (1 << (j % 32)));
-
-        if (active) {
-          u32 chunk_hdl = ((char *)chunk - (char *)rt.state()) / 
-                              alignof(typename PStoreT::StoreChunk);
-
-          ID id = {
-            .type = 0,
-            .offset = (u32)j,
-            .gen = chunk->gens[j],
-            .chunk = chunk_hdl
-          };
-
-          items[offset + buckets[idx]] = { id, idx };
-        }
-      }
-    });
-}
 
 }

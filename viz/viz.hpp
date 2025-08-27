@@ -4,7 +4,7 @@
 #include <gas/gas_ui.hpp>
 #include <gas/gas_imgui.hpp>
 
-#include "game/backend.hpp"
+#include "game/sim.hpp"
 
 #include <vector>
 
@@ -82,6 +82,11 @@ struct Backend;
 struct Viz {
   static constexpr inline i32 NUM_FRAMES_IN_FLIGHT = 2;
 
+  RTStateHandle rtStateHdl = {};
+  Sim *sim = nullptr;
+
+  i32 curVizActiveWorld = 0;
+
   GPULib * gpuLib = nullptr;
   GPUDevice * gpu = nullptr;
   GPUQueue mainQueue = {};
@@ -118,17 +123,15 @@ struct Viz {
 
   Scene scene = {};
 
-  Backend *backend = nullptr;
-
-  void init(GPULib *gpu_lib, GPUDevice *gpu_in, Surface surface,
-            Backend *backend);
+  void init(RTStateHandle rt_state_hdl, Sim *sim_state,
+            GPULib *gpu_lib, GPUDevice *gpu_in, Surface surface);
   void shutdown();
 
-  void resize(Surface surface);
+  void resize(SimRT &rt, Surface surface);
 
   UIControl updateUI(UserInput &input, UserInputEvents &events,
                      const char *text_input, float ui_scale, float delta_t);
-  void render();
+  void render(SimRT &rt);
 
 private:
   inline void initSwapchain(Surface surface);
@@ -153,7 +156,8 @@ private:
 
   inline void buildImguiWidgets();
 
-  inline void renderGeo(FrameState &frame, RasterPassEncoder &enc);
+  inline void renderGeo(
+    SimRT &rt, FrameState &frame, RasterPassEncoder &enc);
 };
 
 inline UIControl::Flag & operator|=(UIControl::Flag &a, UIControl::Flag b);

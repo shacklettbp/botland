@@ -74,7 +74,8 @@ void Frontend::init(Backend *be)
     "Botland", 1920*2, 1080*2, WindowInitFlags::Resizable);
 
   GPULib *gpu_lib = ui_sys->gpuLib();
-  viz.init(gpu_lib, gpu_lib->createDevice(0, {window->surface}), window->surface, be);
+  viz.init(backendRTStateHandle(be), backendSimState(be),
+    gpu_lib, gpu_lib->createDevice(0, {window->surface}), window->surface);
 }
 
 void Frontend::shutdown()
@@ -110,6 +111,8 @@ void Frontend::handleUIControl(UIControl ui_ctrl)
 
 void Frontend::loop()
 {
+  SimRT rt(backendRTStateHandle(backend), 0, backendSimState(backend));
+
   bool should_loop = true;
 
   auto prev_frame_start_time = std::chrono::steady_clock::now();
@@ -135,7 +138,9 @@ void Frontend::loop()
       ui_sys->inputEvents(), ui_sys->inputText(), window->systemUIScale, delta_t);
     handleUIControl(ui_ctrl);
 
-    viz.render();
+    backendSyncStepWorlds(backend);
+
+    viz.render(rt);
   }
 }
 

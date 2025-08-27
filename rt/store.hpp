@@ -65,55 +65,41 @@ struct PersistentStore {
   ID freeList = {};
 
   void init(Runtime &rt, MemArena &arena);
-  ID create(Runtime &rt);
+  ID create(Runtime &rt, u32 type_id);
   void destroy(Runtime &rt, ID actor);
   inline RefT get(Runtime &rt, ID actor, bool verify = true);
 
   inline StoreChunk * getChunk(Runtime &rt, ID actor);
 
-  // TODO: Make iterator
-  template <typename FnT>
-  inline void iterate(Runtime &rt, FnT fn);
-
-#ifdef BOT_GPU
-  template <typename FnT>
-  inline void warpIterateSync(Runtime &rt, FnT fn);
-#endif
-
   i32 size();
-
-  // Returns ID::none() if at this idx, the actor is invalid
-  ID getID(Runtime &rt, u32 idx);
 };
 
+struct GenericID {
+  u32 type : 9 = 0;
+  u32 offset : 7 = 0;
+  u32 gen : 16 = 0;
+  u32 chunk = 0;
 
+  static GenericID none()
+  {
+    return GenericID {
+      .type = 0,
+      .offset = 0,
+      .gen = 0,
+      .chunk = 0,
+    };
+  }
 
-template <typename ID, typename PStoreT>
-struct CompactStore {
-  struct Item {
-    ID id;
-    u32 bucketIdx;
-  };
+  inline bool operator==(GenericID o) const
+  {
+    return type == o.type && offset == o.offset &&
+      gen == o.gen && chunk == o.chunk;
+  }
 
-  MemArena *persistentArena = nullptr;
-  MemArena *tmpArena = nullptr;
-  u32 numBuckets;
-  u32 *buckets = nullptr;
-
-  Item *items = nullptr;
-
-  void init(
-      Runtime &rt,
-      u32 num_buckets,
-      MemArena &persistent_arena,
-      MemArena &tmp_arena);
-
-  void clear();
-
-  // fn must take a runtime object and an index and must return the persistent
-  // store object associated with that index.
-  template <typename FnT>
-  void prefixSumTask(Runtime &rt, TaskExec &exec, FnT &&fn);
+  operator bool() const
+  {
+    return *this != GenericID::none();
+  }
 };
 
 /* Used to create persistent store classes. Example:
@@ -165,14 +151,18 @@ struct CompactStore {
         .chunk = 0, \
       }; \
     } \
-    inline u64 linearID() \
-    { \
-      return ((u64)offset << 32) | chunk; \
-    } \
     inline bool operator==(name##ID o) const \
     { \
       return type == o.type && offset == o.offset && \
         gen == o.gen && chunk == o.chunk; \
+    } \
+    inline GenericID toGeneric() const \
+    { \
+      return GenericID { type, offset, gen, chunk }; \
+    } \
+    static inline name##ID fromGeneric(GenericID id) \
+    { \
+      return name##ID { id.type, id.offset, id.gen, id.chunk }; \
     } \
   }; \
   struct name##Ref;\
@@ -184,6 +174,10 @@ struct CompactStore {
   }; \
   struct name##Ref { \
     FIELDS(BOT_PERSISTENT_STORE_REF_DEF) \
+    \
+    operator bool() const { \
+      return FIELDS(BOT_PERSISTENT_STORE_VALID_DEF) true; \
+    } \
   }; \
   name##Ref name##Chunk::get(i32 offset) { \
     return name##Ref { \
@@ -193,8 +187,9 @@ struct CompactStore {
   using name##Store = PersistentStore<name##ID, name##Chunk, name##Ref>;
 
 #define BOT_PERSISTENT_STORE_CHUNK_DEF(type, name) type name[SIZE];
-#define BOT_PERSISTENT_STORE_REF_DEF(type, name) type *name;
+#define BOT_PERSISTENT_STORE_REF_DEF(type, name) type *name = nullptr;
 #define BOT_PERSISTENT_STORE_GETTER_DEF(type, name) .name = &this->name[offset],
+#define BOT_PERSISTENT_STORE_VALID_DEF(type, name) name != nullptr &&
 
 }
 

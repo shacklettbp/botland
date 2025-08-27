@@ -35,8 +35,12 @@ static Scene loadModels(GPUDevice *gpu, GPUQueue tx_queue)
 
   AssetImporter importer;
 
-  importer.importAsset(
-      (fs::path(BOT_DATA_DIR) / "cube_render.obj").string());
+  {
+    importer.importAsset(
+        (fs::path(BOT_DATA_DIR) / "cube_render.obj").string());
+    importer.importAsset(
+        (fs::path(BOT_DATA_DIR) / "smooth_sphere_render.obj").string());
+  }
 
   ImportedAssets &assets = importer.getImportedAssets();
 
@@ -368,12 +372,15 @@ void Viz::cleanupShaders()
   gpu->destroyRasterShader(objectShader);
 }
 
-void Viz::init(GPULib *gpu_lib, GPUDevice *gpu_in, Surface surface, Backend *be)
+void Viz::init(RTStateHandle rt_state_hdl, Sim *sim_state,
+               GPULib *gpu_lib, GPUDevice *gpu_in, Surface surface)
 {
+  rtStateHdl = rt_state_hdl;
+  sim = sim_state;
+
   gpuLib = gpu_lib;
   gpu = gpu_in;
   mainQueue = gpu->getMainQueue();
-  backend = be;
 
   initSwapchain(surface);
 
@@ -428,7 +435,7 @@ void Viz::shutdown()
   gpuLib = nullptr;
 }
 
-void Viz::resize(Surface new_surface)
+void Viz::resize(SimRT &rt, Surface new_surface)
 {
   // FIXME
   gpu->waitUntilWorkFinished(mainQueue);
@@ -439,7 +446,7 @@ void Viz::resize(Surface new_surface)
   initSwapchain(new_surface);
   initRenderFrames();
 
-  render();
+  render(rt);
 }
 
 static UIControl::Flag updateCamera(OrbitCam &cam, UserInput &input,
@@ -606,43 +613,70 @@ static NonUniformScaleObjectTransform computeNonUniformScaleTxfm(
   return out;
 }
 
-void Viz::renderGeo(FrameState &frame, RasterPassEncoder &enc)
+void Viz::renderGeo(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
 {
-#if 0
-  auto instances_bridge = backendBridgeBuffer<InstanceData>(
-      backend, render_bridge->instances);
-  InstanceData *instances = instances_bridge.sync();
+  World *world = sim->activeWorlds[curVizActiveWorld];
 
   enc.setShader(objectShader);
   enc.setParamBlock(0, frame.input.globalDataPB);
   enc.setVertexBuffer(0, scene.geoBuffer);
   enc.setIndexBufferU32(scene.geoBuffer);
 
-  for (u32 inst_idx = 0; inst_idx < render_bridge->numInstances; ++inst_idx) {
-    InstanceData inst = instances[inst_idx];
-    
-    RenderObject obj = scene.renderObjects[inst.objectID];
+  auto renderObj = [&](i32 obj_id, ObjectPerDraw per_draw)
+  {
+    enc.drawData(per_draw);
 
-    NonUniformScaleObjectTransform txfm =
-      computeNonUniformScaleTxfm(inst.position, inst.rotation, inst.scale);
-
-    enc.drawData(ObjectPerDraw {
-      .txfm = txfm,
-    });
+    RenderObject obj = scene.renderObjects[obj_id];
 
     for (u32 mesh_idx = 0; mesh_idx < obj.numMeshes; mesh_idx++) {
       RenderMesh mesh = scene.renderMeshes[obj.meshOffset + mesh_idx];
       enc.drawIndexed(mesh.vertexOffset, mesh.indexOffset, mesh.numTriangles);
     }
+  };
+
+  {
+    renderObj(0, ObjectPerDraw {
+      .txfm = computeNonUniformScaleTxfm(
+        { i32(GRID_SIZE / 2) - 0.5f, i32(GRID_SIZE / 2) - 0.5f, -1.f },
+        Quat::id(), Diag3x3 { GRID_SIZE, GRID_SIZE, 1 }),
+      .color = Vector4 { 1, 1, 1, 1 },
+    });
   }
-#endif
+
+  for (i32 y = 0; y < GRID_SIZE; y++) {
+    for (i32 x = 0; x < GRID_SIZE; x++) {
+      Cell cell = world->grid[y][x];
+
+      
+
+      GenericID gen_id = cell.actorID;
+
+      if (ActorType(gen_id.type) == ActorType::None) {
+        continue;
+      } else if (ActorType(gen_id.type) == ActorType::Unit) {
+        UnitID id = UnitID::fromGeneric(gen_id);
+        
+        UnitRef unit = world->units.get(rt, id);
+
+        if (!unit) {
+          continue;
+        }
+
+        renderObj(1, ObjectPerDraw {
+          .txfm = computeNonUniformScaleTxfm(
+            { float(unit.pos->x), float(unit.pos->y), 0 },
+            Quat::id(), { 0.35f, 0.35f, 0.5f }),
+          .color = (*unit.team == 0) ?
+            Vector4(1, 0, 0, 1) :
+            Vector4(0, 0, 1, 1),
+        });
+      }
+    }
+  }
 }
 
-void Viz::render()
+void Viz::render(SimRT &rt)
 {
-  // Step worlds
-  backendSyncStepWorlds(backend);
-
   gpu->waitUntilReady(mainQueue);
 
   FrameState &frame = frames[curFrameIdx];
@@ -670,7 +704,7 @@ void Viz::render()
 
   {
     RasterPassEncoder enc = frameEnc.beginRasterPass(frame.render.hdrPass);
-    renderGeo(frame, enc);
+    renderGeo(rt, frame, enc);
     frameEnc.endRasterPass(enc);
   }
 

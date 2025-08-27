@@ -19,6 +19,50 @@ World * createWorld(
 
   world->worldID = world_id;
 
+  world->units.init(rt, world->persistentArena);
+
+  {
+    i32 base_spawn_x = GRID_SIZE / 2 - TEAM_SIZE / 2; 
+
+    for (i32 i = 0; i < TEAM_SIZE; i++) {
+      i32 spawn_x = base_spawn_x++;
+      i32 spawn_y = 0;
+
+      UnitID id = world->units.create(rt, (u32)ActorType::Unit);
+
+      world->playerTeam[i] = id;
+      world->grid[spawn_y][spawn_x].actorID = id.toGeneric();
+
+      UnitRef unit = world->units.get(rt, id);
+
+      *unit.pos = { spawn_x, spawn_y };
+      *unit.hp = DEFAULT_HP;
+      *unit.speed = DEFAULT_SPEED;
+      *unit.team = 0;
+    }
+  }
+
+  {
+    i32 base_spawn_x = GRID_SIZE / 2 - TEAM_SIZE / 2; 
+
+    for (i32 i = 0; i < TEAM_SIZE; i++) {
+      i32 spawn_x = base_spawn_x++; 
+      i32 spawn_y = GRID_SIZE - 1;
+
+      UnitID id = world->units.create(rt, (u32)ActorType::Unit);
+
+      world->enemyTeam[i] = id;
+      world->grid[spawn_y][spawn_x].actorID = id.toGeneric();
+
+      UnitRef unit = world->units.get(rt, id);
+
+      *unit.pos = { spawn_x, spawn_y };
+      *unit.hp = DEFAULT_HP;
+      *unit.speed = DEFAULT_SPEED;
+      *unit.team = 1;
+    }
+  }
+
   return world;
 }
 
@@ -74,18 +118,7 @@ BOT_KERNEL(botInitSim, TaskKernelConfig::singleThread(),
   *sim_out = sim;
 }
 
-static void envTasks(SimRT &rt, TaskExec &exec)
-{
-  Sim *sim = rt.sim();
-
-  exec.forEachTask(
-    rt, sim->numActiveWorlds, true,
-    [&](i32 idx) {
-      World *world = sim->activeWorlds[idx];
-    });
-}
-
-BOT_TASK_KERNEL(botCreateWorlds, Sim *sim, const SimConfig *cfg)
+BOT_TASK_KERNEL(botCreateWorlds, Sim *sim, const SimConfig *)
 {
   SimRT rt(BOT_RT_INIT_ARGS, sim);
 
@@ -105,19 +138,6 @@ BOT_TASK_KERNEL(botStepWorlds, Sim *sim)
   SimRT rt(BOT_RT_INIT_ARGS, sim);
 
   TaskExec exec = sim->taskMgr.start(rt);
-
-  envTasks(rt, exec);
-
-  // Clear temporary arena
-  exec.forEachTask(
-    rt, sim->numActiveWorlds, true, [&](i32 idx) {
-      World *world = sim->activeWorlds[idx];
-    });
-
-  exec.serialTask(
-    rt, [&]() {
-      rt.releaseArena(sim->stepTmpArena);
-    });
 
   exec.finish(rt);
 }

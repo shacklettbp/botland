@@ -40,6 +40,7 @@ PUB struct GlobalPassData {
 
 PUB struct ObjectPerDraw {
   PUB NonUniformScaleObjectTransform txfm;
+  PUB float4 color;
 };
 
 #undef PUB

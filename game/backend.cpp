@@ -175,6 +175,11 @@ RTStateHandle backendRTStateHandle(Backend *backend)
   return backend->rtStateHandle;
 }
 
+Sim * backendSimState(Backend *backend)
+{
+  return backend->sim;
+}
+
 void backendShutdown(Backend *be)
 {
   RTStateHandle rt_state_hdl = be->rtStateHandle;

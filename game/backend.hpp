@@ -24,7 +24,9 @@ void backendShutdown(Backend *backend);
 
 RuntimeState * backendRuntimeState(Backend *backend);
 RTStateHandle backendRTStateHandle(Backend *backend);
+Sim * backendSimState(Backend *backend);
 void backendSyncStepWorlds(Backend *backend);
+
 
 int backendGPUID(Backend *backend);
 

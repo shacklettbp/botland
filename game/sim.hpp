@@ -1,14 +1,40 @@
 #pragma once
 
 #include <rt/rt.hpp>
+#include <rt/store.hpp>
 #include <rt/math.hpp>
-#include <rt/host_print.hpp>
 
 #ifdef BOT_CUDA_SUPPORT
 #include "rt/cuda_comm.hpp"
 #endif
 
 namespace bot {
+
+constexpr inline i32 GRID_SIZE = 16;
+constexpr inline i32 TEAM_SIZE = 4;
+constexpr inline i32 DEFAULT_HP = 10;
+constexpr inline i32 DEFAULT_SPEED = 10;
+
+struct GridPos {
+  i32 x;
+  i32 y;
+};
+
+enum class ActorType : u32 {
+  None = 0,
+  Unit,
+  Static,
+};
+
+#define UNIT_FIELDS(F) \
+  F(GridPos, pos) \
+  F(i32, hp) \
+  F(i32, speed) \
+  F(i32, team)
+
+BOT_PERSISTENT_STORE(Unit, 64, UNIT_FIELDS)
+
+#undef UNIT_FIELDS
 
 struct MLInterface {
   i32 * episodeDoneEvents = nullptr;
@@ -21,12 +47,21 @@ struct MLInterface {
   alignas(BOT_CACHE_LINE) i32 numEpisodeDoneEvents = 0;
 };
 
+struct Cell {
+  GenericID actorID = {};
+};
+
 struct World {
   MemArena persistentArena = {};
 
   u64 worldID = 0;
 
-  float moveSpeed = 1.f;
+  UnitStore units;
+
+  UnitID playerTeam[TEAM_SIZE];
+  UnitID enemyTeam[TEAM_SIZE];
+
+  Cell grid[GRID_SIZE][GRID_SIZE] = {};
 };
 
 struct SimConfig {
@@ -66,8 +101,8 @@ World * createWorld(SimRT &rt, u64 world_id);
 void destroyWorld(SimRT &rt, World *world);
 
 BOT_KERNEL(botInitSim, TaskKernelConfig::singleThread(),
-          const SimConfig *cfg, 
-          Sim **sim_out);
+           const SimConfig *cfg, 
+           Sim **sim_out);
 
 BOT_TASK_KERNEL(botCreateWorlds, Sim *sim, const SimConfig *cfg);
 
