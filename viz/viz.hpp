@@ -134,6 +134,8 @@ struct Viz {
 
   Scene scene = {};
 
+  bool shouldAdvanceSim = false;
+
   void init(RTStateHandle rt_state_hdl, Sim *sim_state,
             GPULib *gpu_lib, GPUDevice *gpu_in, Surface surface);
   void shutdown();

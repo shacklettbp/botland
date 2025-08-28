@@ -26,6 +26,22 @@ enum class ActorType : u32 {
   Static,
 };
 
+enum class MoveAction : u32 {
+  Wait  = 0,
+  Left  = 1,
+  Up    = 2,
+  Right = 3,
+  Down  = 4,
+};
+
+struct UnitAction {
+  MoveAction move = MoveAction::Wait;
+};
+
+struct UnitObservation {
+  f32 grid[GRID_SIZE][GRID_SIZE];
+};
+
 #define UNIT_FIELDS(F) \
   F(GridPos, pos) \
   F(i32, hp) \
@@ -68,9 +84,7 @@ struct World {
 
 struct SimConfig {
   i32 numActiveWorlds = 0;
-  i32 numActionsPerAgent = 0;
-  i32 numDOFSPerAgent = 0;
-  i32 maxNumAgentsPerWorld = 0;
+  i32 maxNumAgentsPerWorld = TEAM_SIZE * 2;
 };
 
 struct Sim {

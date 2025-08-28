@@ -138,7 +138,9 @@ void Frontend::loop()
       ui_sys->inputEvents(), ui_sys->inputText(), window->systemUIScale, delta_t);
     handleUIControl(ui_ctrl);
 
-    backendSyncStepWorlds(backend);
+    if (viz.shouldAdvanceSim) {
+      backendSyncStepWorlds(backend);
+    }
 
     viz.render(rt);
   }
@@ -149,7 +151,6 @@ void Frontend::loop()
 int main(int argc, const char *argv[])
 {
   using namespace bot;
-  namespace fs = std::filesystem;
 
   int gpu_id = -1;
   int num_worlds = 1;
@@ -184,9 +185,6 @@ int main(int argc, const char *argv[])
     },
     .sim = {
       .numActiveWorlds = num_worlds,
-      .numActionsPerAgent = 4,
-      .numDOFSPerAgent = 6,
-      .maxNumAgentsPerWorld = 1,
     },
   });
 

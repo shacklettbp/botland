@@ -76,7 +76,6 @@ BOT_KERNEL(botInitSim, TaskKernelConfig::singleThread(),
 {
   Runtime rt(BOT_RT_INIT_ARGS);
 
-  chk(cfg->numDOFSPerAgent > 0);
   chk(cfg->numActiveWorlds > 0);
   chk(cfg->maxNumAgentsPerWorld > 0);
 
@@ -109,11 +108,17 @@ BOT_KERNEL(botInitSim, TaskKernelConfig::singleThread(),
   ml.dones = rt.arenaAllocN<bool>(
       sim->globalArena, max_total_agents);
 
+  constexpr i32 num_actions_per_agent = sizeof(UnitAction) / sizeof(i32);
+  static_assert(num_actions_per_agent * sizeof(i32) == sizeof(UnitAction));
+
   ml.actions = rt.arenaAllocN<float>(
-      sim->globalArena, max_total_agents * cfg->numActionsPerAgent);
+      sim->globalArena, max_total_agents * num_actions_per_agent);
+
+  constexpr i32 num_ob_floats_per_agent = sizeof(UnitObservation) / sizeof(f32);
+  static_assert(num_ob_floats_per_agent * sizeof(f32) == sizeof(UnitObservation));
 
   ml.observations = rt.arenaAllocN<float>(
-      sim->globalArena, max_total_agents * cfg->numDOFSPerAgent);
+      sim->globalArena, max_total_agents * num_ob_floats_per_agent);
 
   *sim_out = sim;
 }

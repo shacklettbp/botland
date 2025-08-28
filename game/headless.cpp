@@ -45,8 +45,6 @@ int main(int argc, const char *argv[])
     },
     .sim = SimConfig {
       .numActiveWorlds = num_worlds,
-      .numActionsPerAgent = 4,
-      .numDOFSPerAgent = 6,
       .maxNumAgentsPerWorld = 1,
     },
   });

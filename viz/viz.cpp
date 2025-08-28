@@ -603,8 +603,6 @@ static UIControl::Flag updateCamera(OrbitCam &cam, UserInput &input,
   cam.target += translate * CAM_MOVE_SPEED * delta_t;
   cam.position = cam.target - cam.fwd * cam.zoom;
 
-  printf("%f %f\n", cam.heading, cam.azimuth);
-
   return result;
 }
 
