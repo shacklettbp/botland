@@ -38,8 +38,12 @@ struct UnitAction {
   MoveAction move = MoveAction::Wait;
 };
 
+struct GridCellOb {
+  f32 v[3];
+};
+
 struct UnitObservation {
-  f32 grid[GRID_SIZE][GRID_SIZE];
+  GridCellOb grid[GRID_SIZE][GRID_SIZE];
 };
 
 #define UNIT_FIELDS(F) \
@@ -79,7 +83,7 @@ struct World {
 
   Cell grid[GRID_SIZE][GRID_SIZE] = {};
 
-  UnitID *turnOrder = nullptr;
+  UnitID * turnOrder = nullptr;
 };
 
 struct SimConfig {

@@ -66,6 +66,8 @@ World * createWorld(
   return world;
 }
 
+static void ste
+
 void destroyWorld(SimRT &rt, World *world)
 {
   rt.releaseArena(world->persistentArena);
@@ -100,7 +102,8 @@ BOT_KERNEL(botInitSim, TaskKernelConfig::singleThread(),
   zeroN<u32>(ml.episodeCounters, cfg->numActiveWorlds);
   ml.numEpisodeDoneEvents = 0;
 
-  i32 max_total_agents = cfg->maxNumAgentsPerWorld * cfg->numActiveWorlds;
+  // Turn based game.
+  i32 max_total_agents = 1;
 
   ml.rewards = rt.arenaAllocN<float>(
       sim->globalArena, max_total_agents);
@@ -143,6 +146,12 @@ BOT_TASK_KERNEL(botStepWorlds, Sim *sim)
   SimRT rt(BOT_RT_INIT_ARGS, sim);
 
   TaskExec exec = sim->taskMgr.start(rt);
+
+  exec.forEachTask(
+    rt, sim->numActiveWorlds, true,
+    [&](i32 idx) {
+      stepWorld(rt, sim->activeWorlds[idx]);
+    });
 
   exec.finish(rt);
 }
