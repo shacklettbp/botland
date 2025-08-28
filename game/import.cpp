@@ -50,14 +50,11 @@ static uint32_t importGeometry(
 
   uint32_t old_size = imported.objects.size();
 
-  printf("Loading asset from %s\n", path);
-
   std::string_view path_view(path);
 
   auto extension_pos = path_view.rfind('.');
   if (extension_pos == path_view.npos) {
-    printf("File has no extension\n");
-    assert(false);
+    FATAL("File has no extension\n");
   }
   auto extension = path_view.substr(extension_pos + 1);
 

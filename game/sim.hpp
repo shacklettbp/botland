@@ -62,6 +62,8 @@ struct World {
   UnitID enemyTeam[TEAM_SIZE];
 
   Cell grid[GRID_SIZE][GRID_SIZE] = {};
+
+  UnitID *turnOrder = nullptr;
 };
 
 struct SimConfig {
@@ -73,7 +75,6 @@ struct SimConfig {
 
 struct Sim {
   MemArena globalArena = {};
-  MemArena stepTmpArena = {};
 
   TaskManager taskMgr = {};
 

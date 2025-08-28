@@ -543,7 +543,7 @@ static UIControl::Flag updateCamera(OrbitCam &cam, UserInput &input,
                                     UserInputEvents &events, float delta_t)
 {
   constexpr float MOUSE_SPEED = 1e-1f;
-  constexpr float SCROLL_SPEED = 2.f;
+  constexpr float SCROLL_SPEED = 5.f;
   constexpr float CAM_MOVE_SPEED = 5.f;
 
   UIControl::Flag result = UIControl::None;
@@ -602,6 +602,8 @@ static UIControl::Flag updateCamera(OrbitCam &cam, UserInput &input,
 
   cam.target += translate * CAM_MOVE_SPEED * delta_t;
   cam.position = cam.target - cam.fwd * cam.zoom;
+
+  printf("%f %f\n", cam.heading, cam.azimuth);
 
   return result;
 }
@@ -718,13 +720,6 @@ void Viz::renderGeo(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
     });
 
     enc.draw(0, 12);
-
-    //renderObj(0, ObjectPerDraw {
-    //  .txfm = computeNonUniformScaleTxfm(
-    //    { i32(GRID_SIZE / 2) - 0.5f, i32(GRID_SIZE / 2) - 0.5f, -1.f },
-    //    Quat::id(), Diag3x3 { GRID_SIZE, GRID_SIZE, 1 }),
-    //  .color = Vector4 { 1, 1, 1, 1 },
-    //});
   }
 
   enc.setShader(materials.unitsShader);
