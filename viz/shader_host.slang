@@ -38,9 +38,13 @@ PUB struct GlobalPassData {
   PUB LightData lights;
 };
 
-PUB struct ObjectPerDraw {
+PUB struct UnitsPerDraw {
   PUB NonUniformScaleObjectTransform txfm;
   PUB float4 color;
+};
+
+PUB struct BoardDrawData {
+  PUB uint2 gridSize;
 };
 
 #undef PUB

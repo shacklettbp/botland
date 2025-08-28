@@ -5,7 +5,8 @@
 
 #include <gas/gas_imgui.hpp>
 
-#include "bot-viz-shaders.hpp"
+#include "bot-viz-global-shaders.hpp"
+#include "bot-viz-material-shaders.hpp"
 #include "shader_host.hpp"
 
 #include "game/import.hpp"
@@ -161,10 +162,19 @@ void Viz::initSamplers()
   bilinearRepeatSampler = gpu->createSampler({
     .addressMode = SamplerAddressMode::Repeat,
   });
+
+  nearestRepeatSampler = gpu->createSampler({
+    .addressMode = SamplerAddressMode::Repeat,
+    .mipmapFilterMode = SamplerFilterMode::Nearest,
+    .magnificationFilterMode = SamplerFilterMode::Nearest,
+    .minificationFilterMode = SamplerFilterMode::Nearest,
+    .anisotropy = 1,
+  });
 }
 
 void Viz::cleanupSamplers()
 {
+  gpu->destroySampler(nearestRepeatSampler);
   gpu->destroySampler(bilinearRepeatSampler);
 }
 
@@ -231,6 +241,102 @@ void Viz::cleanupPassInterfaces()
 {
   gpu->destroyRasterPassInterface(finalPassInterface);
   gpu->destroyRasterPassInterface(hdrPassInterface);
+}
+
+void Viz::initMaterials()
+{
+  using enum VertexFormat;
+
+  VizMaterialShaders shaders;
+  StackAlloc alloc;
+
+  std::filesystem::path shader_dir = 
+    getShaderDir(gpuLib->backendShaderByteCodeType());
+
+  chk(shaders.load(alloc, (shader_dir / "bot-viz-material-shaders.shader_blob").c_str()));
+
+  ImageImporter importer;
+
+  {
+    auto src_tex = importer.importImage(
+      (std::filesystem::path(BOT_DATA_DIR) / "checkerboard.png").c_str());
+
+    if (!src_tex.has_value()) {
+      FATAL("Failed to load checkerboard");
+    }
+
+    materials.boardTexture = gpu->createTexture({
+      .format = TextureFormat::RGBA8_SRGB,
+      .width = u16(src_tex->width),
+      .height = u16(src_tex->height),
+      .initData = { .ptr = src_tex->data },
+    }, mainQueue);
+
+    gpu->waitUntilWorkFinished(mainQueue);
+
+    materials.boardPBType = gpu->createParamBlockType({
+      .uuid = "board_materials_pb_type"_to_uuid,
+      .textures = {
+        { .shaderUsage = ShaderStage::Fragment },
+      },
+      .samplers = {
+        { .type = SamplerBindingType::Filtering },
+      },
+    });
+
+    materials.boardPB = gpu->createParamBlock({
+      .typeID = materials.boardPBType,
+      .textures = { materials.boardTexture },
+      .samplers = { nearestRepeatSampler },
+    });
+
+    materials.boardShader = gpu->createRasterShader({
+      .byteCode = shaders.getByteCode(MaterialShaderID::Board),
+      .vertexEntry = "vertMain",
+      .fragmentEntry = "fragMain",
+      .rasterPass = hdrPassInterface,
+      .paramBlockTypes = { globalDataPBType, materials.boardPBType },
+      .numPerDrawBytes = sizeof(BoardDrawData),
+      .rasterConfig = {
+        .depthCompare = DepthCompare::GreaterOrEqual,
+      },
+    });
+  }
+
+  {
+    materials.unitsShader = gpu->createRasterShader({
+      .byteCode = shaders.getByteCode(MaterialShaderID::Units),
+      .vertexEntry = "vertMain",
+      .fragmentEntry = "fragMain",
+      .rasterPass = hdrPassInterface,
+      .paramBlockTypes = { globalDataPBType },
+      .numPerDrawBytes = sizeof(UnitsPerDraw),
+      .vertexBuffers = {{
+        .stride = sizeof(RenderVertex), .attributes = {
+          { .offset = offsetof(RenderVertex, pos), .format = Vec3_F32 },
+          { .offset = offsetof(RenderVertex, normal),  .format = Vec3_F32 },
+          { .offset = offsetof(RenderVertex, uv), .format = Vec2_F32 },
+        },
+      }},
+      .rasterConfig = {
+        .depthCompare = DepthCompare::GreaterOrEqual,
+      },
+    });
+  }
+}
+
+void Viz::cleanupMaterials()
+{
+  {
+    gpu->destroyRasterShader(materials.unitsShader);
+  }
+
+  {
+    gpu->destroyRasterShader(materials.boardShader);
+    gpu->destroyParamBlock(materials.boardPB);
+    gpu->destroyParamBlockType(materials.boardPBType);
+    gpu->destroyTexture(materials.boardTexture);
+  }
 }
 
 void Viz::initFrameInputs()
@@ -319,39 +425,20 @@ void Viz::cleanupRenderFrames()
   }
 }
 
-void Viz::loadShaders()
+void Viz::loadGlobalShaders()
 {
   using enum VertexFormat;
 
-  VizShaders shaders;
+  VizGlobalShaders shaders;
   StackAlloc alloc;
 
   std::filesystem::path shader_dir = 
     getShaderDir(gpuLib->backendShaderByteCodeType());
 
-  chk(shaders.load(alloc, (shader_dir / "bot-viz-shaders.shader_blob").c_str()));
-
-  objectShader = gpu->createRasterShader({
-    .byteCode = shaders.getByteCode(ShaderID::Objects),
-    .vertexEntry = "vertMain",
-    .fragmentEntry = "fragMain",
-    .rasterPass = hdrPassInterface,
-    .paramBlockTypes = { globalDataPBType },
-    .numPerDrawBytes = sizeof(ObjectPerDraw),
-    .vertexBuffers = {{
-      .stride = sizeof(RenderVertex), .attributes = {
-        { .offset = offsetof(RenderVertex, pos), .format = Vec3_F32 },
-        { .offset = offsetof(RenderVertex, normal),  .format = Vec3_F32 },
-        { .offset = offsetof(RenderVertex, uv), .format = Vec2_F32 },
-      },
-    }},
-    .rasterConfig = {
-      .depthCompare = DepthCompare::GreaterOrEqual,
-    },
-  });
+  chk(shaders.load(alloc, (shader_dir / "bot-viz-global-shaders.shader_blob").c_str()));
 
   tonemapShader = gpu->createRasterShader({
-    .byteCode = shaders.getByteCode(ShaderID::Tonemap),
+    .byteCode = shaders.getByteCode(GlobalShaderID::Tonemap),
     .vertexEntry = "vertMain",
     .fragmentEntry = "fragMain",
     .rasterPass = finalPassInterface,
@@ -366,10 +453,9 @@ void Viz::loadShaders()
   });
 }
 
-void Viz::cleanupShaders()
+void Viz::cleanupGlobalShaders()
 {
   gpu->destroyRasterShader(tonemapShader);
-  gpu->destroyRasterShader(objectShader);
 }
 
 void Viz::init(RTStateHandle rt_state_hdl, Sim *sim_state,
@@ -396,11 +482,13 @@ void Viz::init(RTStateHandle rt_state_hdl, Sim *sim_state,
   initParamBlockTypes();
   initPassInterfaces();
 
+  loadGlobalShaders();
+
+  initMaterials();
+
   initFrameInputs();
   initRenderFrames();
 
-  loadShaders();
-  
   ImGuiSystem::init(gpu, mainQueue, finalPassInterface,
     getShaderDir(gpuLib->backendShaderByteCodeType()).c_str(),
     (std::filesystem::path(BOT_DATA_DIR) / "imgui_font.ttf").c_str(),
@@ -419,10 +507,12 @@ void Viz::shutdown()
 
   ImGuiSystem::shutdown(gpu);
 
-  cleanupShaders();
-
   cleanupRenderFrames();
   cleanupFrameInputs();
+
+  cleanupMaterials();
+
+  cleanupGlobalShaders();
 
   cleanupPassInterfaces();
   cleanupParamBlockTypes();
@@ -617,37 +707,33 @@ void Viz::renderGeo(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
 {
   World *world = sim->activeWorlds[curVizActiveWorld];
 
-  enc.setShader(objectShader);
   enc.setParamBlock(0, frame.input.globalDataPB);
+
+  {
+    enc.setShader(materials.boardShader);
+    enc.setParamBlock(1, materials.boardPB);
+
+    enc.drawData(BoardDrawData {
+      .gridSize = { GRID_SIZE, GRID_SIZE },
+    });
+
+    enc.draw(0, 12);
+
+    //renderObj(0, ObjectPerDraw {
+    //  .txfm = computeNonUniformScaleTxfm(
+    //    { i32(GRID_SIZE / 2) - 0.5f, i32(GRID_SIZE / 2) - 0.5f, -1.f },
+    //    Quat::id(), Diag3x3 { GRID_SIZE, GRID_SIZE, 1 }),
+    //  .color = Vector4 { 1, 1, 1, 1 },
+    //});
+  }
+
+  enc.setShader(materials.unitsShader);
   enc.setVertexBuffer(0, scene.geoBuffer);
   enc.setIndexBufferU32(scene.geoBuffer);
-
-  auto renderObj = [&](i32 obj_id, ObjectPerDraw per_draw)
-  {
-    enc.drawData(per_draw);
-
-    RenderObject obj = scene.renderObjects[obj_id];
-
-    for (u32 mesh_idx = 0; mesh_idx < obj.numMeshes; mesh_idx++) {
-      RenderMesh mesh = scene.renderMeshes[obj.meshOffset + mesh_idx];
-      enc.drawIndexed(mesh.vertexOffset, mesh.indexOffset, mesh.numTriangles);
-    }
-  };
-
-  {
-    renderObj(0, ObjectPerDraw {
-      .txfm = computeNonUniformScaleTxfm(
-        { i32(GRID_SIZE / 2) - 0.5f, i32(GRID_SIZE / 2) - 0.5f, -1.f },
-        Quat::id(), Diag3x3 { GRID_SIZE, GRID_SIZE, 1 }),
-      .color = Vector4 { 1, 1, 1, 1 },
-    });
-  }
 
   for (i32 y = 0; y < GRID_SIZE; y++) {
     for (i32 x = 0; x < GRID_SIZE; x++) {
       Cell cell = world->grid[y][x];
-
-      
 
       GenericID gen_id = cell.actorID;
 
@@ -662,7 +748,7 @@ void Viz::renderGeo(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
           continue;
         }
 
-        renderObj(1, ObjectPerDraw {
+        enc.drawData(UnitsPerDraw {
           .txfm = computeNonUniformScaleTxfm(
             { float(unit.pos->x), float(unit.pos->y), 0 },
             Quat::id(), { 0.35f, 0.35f, 0.5f }),
@@ -670,6 +756,14 @@ void Viz::renderGeo(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
             Vector4(1, 0, 0, 1) :
             Vector4(0, 0, 1, 1),
         });
+
+        RenderObject obj = scene.renderObjects[1];
+
+        for (u32 mesh_idx = 0; mesh_idx < obj.numMeshes; mesh_idx++) {
+          RenderMesh mesh = scene.renderMeshes[obj.meshOffset + mesh_idx];
+          enc.drawIndexed(mesh.vertexOffset, mesh.indexOffset,
+                          mesh.numTriangles);
+        }
       }
     }
   }

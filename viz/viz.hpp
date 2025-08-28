@@ -63,6 +63,17 @@ struct FrameInput {
   ParamBlock globalDataPB = {};
 };
 
+struct Materials {
+  // Main grid / board material data
+  Texture boardTexture = {};
+  ParamBlockType boardPBType = {};
+  ParamBlock boardPB = {};
+  RasterShader boardShader = {};
+
+  // Units
+  RasterShader unitsShader = {};
+};
+
 // Resolution dependent
 struct RenderFrame {
   Texture depth = {};
@@ -100,6 +111,7 @@ struct Viz {
   TextureFormat hdrRenderFormat = {};
 
   Sampler bilinearRepeatSampler = {};
+  Sampler nearestRepeatSampler = {};
 
   ParamBlockType globalDataPBType = {};
   ParamBlockType tonemapPBType = {};
@@ -107,15 +119,14 @@ struct Viz {
   RasterPassInterface hdrPassInterface = {};
   RasterPassInterface finalPassInterface = {};
 
+  RasterShader tonemapShader = {};
+
+  Materials materials = {};
+
   std::array<FrameState, NUM_FRAMES_IN_FLIGHT> frames = {};
   i32 curFrameIdx = 0;
 
-  ParamBlockType globalParamBlockType = {};
-  Buffer globalPassDataBuffer = {};
   ParamBlock globalParamBlock = {};
-
-  RasterShader objectShader = {};
-  RasterShader tonemapShader = {};
 
   CommandEncoder frameEnc = {};
 
@@ -145,14 +156,17 @@ private:
   inline void initPassInterfaces();
   inline void cleanupPassInterfaces();
 
+  inline void initMaterials();
+  inline void cleanupMaterials();
+
   inline void initFrameInputs();
   inline void cleanupFrameInputs();
 
   inline void initRenderFrames();
   inline void cleanupRenderFrames();
 
-  inline void loadShaders();
-  inline void cleanupShaders();
+  inline void loadGlobalShaders();
+  inline void cleanupGlobalShaders();
 
   inline void buildImguiWidgets();
 

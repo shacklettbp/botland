@@ -81,7 +81,8 @@ public float3 objectNormalToWorld(float3x4 w2o, float3 normal_o)
          w2o[2].xyz * normal_o.z;
 }
 
-public void cubeVert(uint id, out float3 pos_out, out float3 normal_out)
+public void cubeVert(uint id, out float3 pos_out,
+                     out float3 normal_out, out float2 uv_out)
 {
   uint tri = id / 3;
   uint idx = id % 3;
@@ -103,11 +104,20 @@ public void cubeVert(uint id, out float3 pos_out, out float3 normal_out)
   float3 v = flip * d.zxy;
 
   float mirror = -1.0 + 2.0 * top;
+
+  float au = 1.0 - 2 * (idx & 1);
+  float av = 1.0 - 2 * (idx >> 1);
+
   pos_out = n +
-    mirror * (1.0 - 2 * (idx & 1)) * u +
-    mirror * (1.0 - 2 * (idx >> 1)) * v;
+    mirror * au * u +
+    mirror * av * v;
 
   normal_out = n;
+
+  float tu = mirror * au;
+  float tv = mirror * av;
+
+  uv_out = float2(0.5 * tu + 0.5, 0.5 * tv + 0.5);
 }
 
 public interface IVertexFetch {

@@ -1,10 +1,18 @@
-gas_add_shaders(TARGET bot-viz-shaders
-  SHADER_ENUM ShaderID
-  SHADER_CLASS VizShaders
+gas_add_shaders(TARGET bot-viz-global-shaders
+  SHADER_ENUM GlobalShaderID
+  SHADER_CLASS VizGlobalShaders
   CPP_NAMESPACE bot
   SHADERS
-    Objects objects.slang
     Tonemap tonemap.slang
+)
+
+gas_add_shaders(TARGET bot-viz-material-shaders
+  SHADER_ENUM MaterialShaderID
+  SHADER_CLASS VizMaterialShaders
+  CPP_NAMESPACE bot
+  SHADERS
+    Board board.slang
+    Units units.slang
 )
 
 add_library(bot-viz STATIC
@@ -12,7 +20,8 @@ add_library(bot-viz STATIC
 )
 
 target_link_libraries(bot-viz PUBLIC
-  gas_core gas_imgui bot-viz-shaders gas_ui)
+  gas_core gas_imgui gas_ui
+  bot-viz-global-shaders bot-viz-material-shaders)
 
 target_compile_definitions(bot-viz PRIVATE
   -DBOT_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../data/"

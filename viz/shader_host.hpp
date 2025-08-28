@@ -34,6 +34,7 @@ using shader::RenderVertex;
 using shader::GlobalPassData;
 using shader::ViewData;
 using shader::NonUniformScaleObjectTransform;
-using shader::ObjectPerDraw;
+using shader::UnitsPerDraw;
+using shader::BoardDrawData;
 
 }

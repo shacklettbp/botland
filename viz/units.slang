@@ -3,7 +3,7 @@ import utils;
 
 ParameterBlock<GlobalPassData> global;
 
-ParameterBlock<ObjectPerDraw> perDraw;
+ParameterBlock<UnitsPerDraw> perDraw;
 
 struct VertInput {
   float3 pos    : Position;
