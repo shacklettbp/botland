@@ -134,13 +134,9 @@ void Frontend::loop()
     }
     prev_frame_start_time = cur_frame_start_time;
 
-    UIControl ui_ctrl = viz.updateUI(ui_sys->inputState(), 
+    UIControl ui_ctrl = viz.runUI(rt, ui_sys->inputState(), 
       ui_sys->inputEvents(), ui_sys->inputText(), window->systemUIScale, delta_t);
     handleUIControl(ui_ctrl);
-
-    if (viz.shouldAdvanceSim) {
-      backendSyncStepWorlds(backend);
-    }
 
     viz.render(rt);
   }

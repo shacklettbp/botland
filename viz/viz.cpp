@@ -613,8 +613,8 @@ void Viz::buildImguiWidgets()
   ImGui::End();
 }
 
-UIControl Viz::updateUI(UserInput &input, UserInputEvents &events,
-                        const char *text_input, float ui_scale, float delta_t)
+UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
+                     const char *text_input, float ui_scale, float delta_t)
 {
   UIControl ui_ctrl {};
 
@@ -635,6 +635,26 @@ UIControl Viz::updateUI(UserInput &input, UserInputEvents &events,
   if ((imgui_ctrl.type & ImGuiSystem::UIControl::DisableIME)) {
     ui_ctrl.flags |= UIControl::DisableIME;
   }
+  
+  World *world = sim->activeWorlds[curVizActiveWorld];
+  
+  static float elapsed_time = 0.0f;
+  elapsed_time += delta_t;
+  if (elapsed_time >= 0.1f) {
+    playerMoveAction.deltaX = (rand() % 8) - 4; // -4 to +3
+    playerMoveAction.deltaY = (rand() % 8) - 4; // -4 to +3
+
+    curUnitMove(rt, world, playerMoveAction);
+    
+    playerAttackAction.deltaX = (rand() % 3) - 1;
+    playerAttackAction.deltaY = (rand() % 3) - 1;
+    
+    curUnitAttack(rt, world, playerAttackAction);
+    endUnitTurn(rt, world);
+
+    elapsed_time = 0.0f;
+  }
+  
 
   return ui_ctrl;
 }
@@ -737,7 +757,7 @@ void Viz::renderGeo(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
         
         UnitRef unit = world->units.get(rt, id);
 
-        if (!unit) {
+        if (!unit || *unit.hp <= 0) {
           continue;
         }
 

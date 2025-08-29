@@ -164,6 +164,10 @@ struct GenericID {
     { \
       return name##ID { id.type, id.offset, id.gen, id.chunk }; \
     } \
+    operator bool() const \
+    { \
+      return *this != name##ID::none(); \
+    } \
   }; \
   struct name##Ref;\
   struct name##Chunk { \

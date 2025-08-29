@@ -134,7 +134,8 @@ struct Viz {
 
   Scene scene = {};
 
-  bool shouldAdvanceSim = false;
+  MoveAction playerMoveAction = {};
+  AttackAction playerAttackAction = {};
 
   void init(RTStateHandle rt_state_hdl, Sim *sim_state,
             GPULib *gpu_lib, GPUDevice *gpu_in, Surface surface);
@@ -142,8 +143,8 @@ struct Viz {
 
   void resize(SimRT &rt, Surface surface);
 
-  UIControl updateUI(UserInput &input, UserInputEvents &events,
-                     const char *text_input, float ui_scale, float delta_t);
+  UIControl runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
+                  const char *text_input, float ui_scale, float delta_t);
   void render(SimRT &rt);
 
 private:

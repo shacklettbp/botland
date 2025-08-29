@@ -26,16 +26,19 @@ enum class ActorType : u32 {
   Static,
 };
 
-enum class MoveAction : u32 {
-  Wait  = 0,
-  Left  = 1,
-  Up    = 2,
-  Right = 3,
-  Down  = 4,
+struct MoveAction {
+  i32 deltaX = 0;
+  i32 deltaY = 0;
+};
+
+struct AttackAction {
+  i32 deltaX = 0;
+  i32 deltaY = 0;
 };
 
 struct UnitAction {
-  MoveAction move = MoveAction::Wait;
+  MoveAction move = {};
+  AttackAction attack = {};
 };
 
 struct GridCellOb {
@@ -50,7 +53,9 @@ struct UnitObservation {
   F(GridPos, pos) \
   F(i32, hp) \
   F(i32, speed) \
-  F(i32, team)
+  F(i32, team) \
+  F(UnitID, nextTurn) \
+  F(UnitID, prevTurn)
 
 BOT_PERSISTENT_STORE(Unit, 64, UNIT_FIELDS)
 
@@ -61,7 +66,7 @@ struct MLInterface {
   u32 * episodeCounters = nullptr;
   float * rewards = nullptr;
   bool * dones = nullptr;
-  float * actions = nullptr;
+  i32 * actions = nullptr;
   float * observations = nullptr;
 
   alignas(BOT_CACHE_LINE) i32 numEpisodeDoneEvents = 0;
@@ -73,6 +78,7 @@ struct Cell {
 
 struct World {
   MemArena persistentArena = {};
+  MemArena tmpArena = {};
 
   u64 worldID = 0;
 
@@ -83,7 +89,9 @@ struct World {
 
   Cell grid[GRID_SIZE][GRID_SIZE] = {};
 
-  UnitID * turnOrder = nullptr;
+  UnitID turnHead = UnitID::none();
+  UnitID turnCur = UnitID::none();
+  i32 numAliveUnits = 0;
 };
 
 struct SimConfig {
@@ -118,6 +126,12 @@ private:
 
 World * createWorld(SimRT &rt, u64 world_id);
 void destroyWorld(SimRT &rt, World *world);
+
+void curUnitMove(SimRT &rt, World *world, MoveAction action);
+void curUnitAttack(SimRT &rt, World *world, AttackAction action);
+void endUnitTurn(SimRT &rt, World *world);
+
+void stepWorld(SimRT &rt, World *world, UnitAction action);
 
 BOT_KERNEL(botInitSim, TaskKernelConfig::singleThread(),
            const SimConfig *cfg, 
