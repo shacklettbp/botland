@@ -7,38 +7,24 @@ namespace bot {
 
 static inline void unlinkUnitFromTurnOrder(SimRT &rt, World *world, UnitID id)
 {
-  UnitRef u = world->units.get(rt, id);
-  TurnListLinkedList *turnListItem = u.turnListItem;
+  UnitPtr u = world->units.get(rt, id);
+  TurnListLinkedList &turnListItem = u->turnListItem;
 
-  UnitID prev_id = turnListItem->prev;
-  UnitID next_id = turnListItem->next;
+  UnitID prev_id = turnListItem.prev;
+  UnitID next_id = turnListItem.next;
 
   if (prev_id) {
-    UnitRef prev = world->units.get(rt, prev_id);
-    prev.turnListItem->next = next_id;
+    UnitPtr prev = world->units.get(rt, prev_id);
+    prev->turnListItem.next = next_id;
   }
   
-  for (i32 i = 0; i < TEAM_SIZE; i++) {
-    if (world->playerTeam[i] == id) {
-      world->playerTeam[i] = UnitID::none();
-    }
-  }
-  
-  
-
-  if (next) {
-    UnitRef n = world->units.get(rt, next);
-    *n.prevTurn = prev;
+  if (next_id) {
+    UnitPtr next = world->units.get(rt, next_id);
+    next->turnListItem.prev = prev_id;
   }
 
-  *u.prevTurn = UnitID::none();
-  *u.nextTurn = UnitID::none();
-  
-  if (world->turnCur == id) {
-    world->turnCur = next != UnitID::none() ? next : world->turnHead;
-  }
-
-  if (world->numAliveUnits > 0) world->numAliveUnits -= 1;
+  u->turnListItem.prev = UnitID::none();
+  u->turnListItem.next = UnitID::none();
 }
 
 World * createWorld(
@@ -64,17 +50,15 @@ World * createWorld(
       i32 spawn_x = base_spawn_x++;
       i32 spawn_y = 0;
 
-      UnitID id = world->units.create(rt, (u32)ActorType::Unit);
+      UnitPtr u = world->units.create(rt, (u32)ActorType::Unit);
 
-      world->playerTeam[i] = id;
-      world->grid[spawn_y][spawn_x].actorID = id.toGeneric();
+      world->playerTeam[i] = u->id;
+      world->grid[spawn_y][spawn_x].actorID = u->id.toGeneric();
 
-      UnitRef unit = world->units.get(rt, id);
-
-      *unit.pos = { spawn_x, spawn_y };
-      *unit.hp = DEFAULT_HP;
-      *unit.speed = DEFAULT_SPEED;
-      *unit.team = 0;
+      u->pos = { spawn_x, spawn_y };
+      u->hp = DEFAULT_HP;
+      u->speed = DEFAULT_SPEED;
+      u->team = 0;
     }
   }
 
@@ -85,54 +69,68 @@ World * createWorld(
       i32 spawn_x = base_spawn_x++; 
       i32 spawn_y = GRID_SIZE - 1;
 
-      UnitID id = world->units.create(rt, (u32)ActorType::Unit);
+      UnitPtr u = world->units.create(rt, (u32)ActorType::Unit);
 
-      world->enemyTeam[i] = id;
-      world->grid[spawn_y][spawn_x].actorID = id.toGeneric();
+      world->enemyTeam[i] = u->id;
+      world->grid[spawn_y][spawn_x].actorID = u->id.toGeneric();
 
-      UnitRef unit = world->units.get(rt, id);
-
-      *unit.pos = { spawn_x, spawn_y };
-      *unit.hp = DEFAULT_HP;
-      *unit.speed = DEFAULT_SPEED;
-      *unit.team = 1;
+      u->pos = { spawn_x, spawn_y };
+      u->hp = DEFAULT_HP;
+      u->speed = DEFAULT_SPEED;
+      u->team = 1;
     }
   }
 
   { // Initialize turn order (intrusive doubly linked list by descending speed)
     world->numAliveUnits = TEAM_SIZE * 2;
+    
+    auto tmp_region = rt.beginTmpRegion();
+    BOT_DEFER(rt.endTmpRegion(tmp_region));
+    
+    struct SortData {
+      UnitID id;
+      i32 speed;
+    };
 
-    UnitID tmp_ids[TEAM_SIZE * 2];
+    SortData *sort_tmp = rt.tmpAllocN<SortData>(TEAM_SIZE * 2);
+
     i32 idx = 0;
-    for (i32 i = 0; i < TEAM_SIZE; i++) tmp_ids[idx++] = world->playerTeam[i];
-    for (i32 i = 0; i < TEAM_SIZE; i++) tmp_ids[idx++] = world->enemyTeam[i];
+    for (i32 i = 0; i < TEAM_SIZE; i++) {
+      UnitPtr u = world->units.get(rt, world->playerTeam[i]);
+      sort_tmp[idx++] = { u->id, u->speed };
+    }
+    for (i32 i = 0; i < TEAM_SIZE; i++) {
+      UnitPtr u = world->units.get(rt, world->enemyTeam[i]);
+      sort_tmp[idx++] = { u->id, u->speed };
+    }
 
     // Simple bubble sort by speed descending
     for (i32 i = 0; i < world->numAliveUnits - 1; i++) {
       for (i32 j = 0; j < world->numAliveUnits - i - 1; j++) {
-        UnitRef a = world->units.get(rt, tmp_ids[j]);
-        UnitRef b = world->units.get(rt, tmp_ids[j + 1]);
-        if (*a.speed < *b.speed) {
-          UnitID t = tmp_ids[j]; tmp_ids[j] = tmp_ids[j + 1]; tmp_ids[j + 1] = t;
+        if (sort_tmp[j].speed < sort_tmp[j + 1].speed) {
+          SortData t = sort_tmp[j];
+          sort_tmp[j] = sort_tmp[j + 1];
+          sort_tmp[j + 1] = t;
         }
       }
     }
 
     // Link them
-    world->turnHead = tmp_ids[0];
+    world->turnHead = sort_tmp[0].id;
     world->turnCur = world->turnHead;
     for (i32 i = 0; i < world->numAliveUnits; i++) {
-      UnitRef u = world->units.get(rt, tmp_ids[i]);
-      UnitID prev = (i == 0) ? UnitID::none() : tmp_ids[i - 1];
-      UnitID next = (i + 1 == world->numAliveUnits) ? UnitID::none() : tmp_ids[i + 1];
-      *u.prevTurn = prev;
-      *u.nextTurn = next;
+      UnitPtr u = world->units.get(rt, sort_tmp[i].id);
+      UnitID prev = (i == 0) ? sort_tmp[world->numAliveUnits - 1].id : sort_tmp[i - 1].id;
+      UnitID next = (i == world->numAliveUnits - 1) ? sort_tmp[0].id : sort_tmp[i + 1].id;
+      u->turnListItem.prev = prev;
+      u->turnListItem.next = next;
     }
   }
 
   return world;
 }
 
+#if 0
 void curUnitMove(SimRT &rt, World *world, MoveAction action)
 {
   UnitID cur_unit_id = world->turnCur;
@@ -253,33 +251,25 @@ void curUnitAttack(SimRT &rt, World *world, AttackAction action)
     }
   }
 }
-
-void endUnitTurn(SimRT &rt, World *world)
-{
-  // Advance to next alive unit
-  if (world->turnCur) {
-    UnitRef cur = world->units.get(rt, world->turnCur);
-    UnitID next = *cur.nextTurn ? *cur.nextTurn : world->turnHead;
-    // Skip dead units
-    int safety = 0;
-    while (next && safety++ < TEAM_SIZE * 2 + 2) {
-      UnitRef n = world->units.get(rt, next);
-      if (n && *n.hp > 0) break;
-      UnitID to_unlink = next;
-      next = *n.nextTurn ? *n.nextTurn : world->turnHead;
-      unlinkUnitFromTurnOrder(rt, world, to_unlink);
-    }
-    world->turnCur = next;
-  }
-
-  rt.releaseArena(world->tmpArena);
-}
+#endif
 
 void stepWorld(SimRT &rt, World *world, UnitAction action)
 {
-  curUnitMove(rt, world, action.move);
-  curUnitAttack(rt, world, action.attack);
-  endUnitTurn(rt, world);
+
+  {
+    // Advance to next alive unit
+    if (world->turnCur) {
+      UnitPtr cur = world->units.get(rt, world->turnCur);
+      UnitID next_id = cur->turnListItem.next ? cur->turnListItem.next : world->turnHead;
+
+      while (next_id) {
+        UnitPtr next = world->units.get(rt, next_id);
+        next_id = next->turnListItem.next ? next->turnListItem.next : world->turnHead;
+      }
+    }
+
+    rt.releaseArena(world->tmpArena);
+  }
 }
 
 void destroyWorld(SimRT &rt, World *world)

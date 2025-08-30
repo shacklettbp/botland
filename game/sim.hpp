@@ -32,6 +32,7 @@ enum class MoveAction : u32 {
   Up,
   Right,
   Down,
+  NUM_MOVE_ACTIONS,
 };
 
 enum class AttackType : u32 {
@@ -51,6 +52,8 @@ struct UnitObservation {
   GridCellOb grid[GRID_SIZE][GRID_SIZE];
 };
 
+BOT_PERSISTENT_ID(UnitID)
+
 struct TurnListLinkedList {
   UnitID prev = {};
   UnitID next = {};
@@ -64,7 +67,7 @@ struct TurnListLinkedList {
   F(i32, team) \
   F(TurnListLinkedList, turnListItem)
 
-BOT_PERSISTENT_STORE(Unit, 64, UNIT_FIELDS)
+BOT_PERSISTENT_STORE(Unit, UnitID, 64, UNIT_FIELDS)
 
 #undef UNIT_FIELDS
 
@@ -133,10 +136,6 @@ private:
 
 World * createWorld(SimRT &rt, u64 world_id);
 void destroyWorld(SimRT &rt, World *world);
-
-void curUnitMove(SimRT &rt, World *world, MoveAction action);
-void curUnitAttack(SimRT &rt, World *world, AttackAction action);
-void endUnitTurn(SimRT &rt, World *world);
 
 void stepWorld(SimRT &rt, World *world, UnitAction action);
 

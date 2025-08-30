@@ -134,8 +134,7 @@ struct Viz {
 
   Scene scene = {};
 
-  MoveAction playerMoveAction = {};
-  AttackAction playerAttackAction = {};
+  UnitAction playerAction = {};
 
   void init(RTStateHandle rt_state_hdl, Sim *sim_state,
             GPULib *gpu_lib, GPUDevice *gpu_in, Surface surface);

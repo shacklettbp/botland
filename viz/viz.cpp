@@ -641,20 +641,12 @@ UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
   static float elapsed_time = 0.0f;
   elapsed_time += delta_t;
   if (elapsed_time >= 0.1f) {
-    playerMoveAction.deltaX = (rand() % 8) - 4; // -4 to +3
-    playerMoveAction.deltaY = (rand() % 8) - 4; // -4 to +3
+    playerAction.move = MoveAction(rand() % (int)MoveAction::NUM_MOVE_ACTIONS);
 
-    curUnitMove(rt, world, playerMoveAction);
+    stepWorld(rt, world, playerAction);
     
-    playerAttackAction.deltaX = (rand() % 3) - 1;
-    playerAttackAction.deltaY = (rand() % 3) - 1;
-    
-    curUnitAttack(rt, world, playerAttackAction);
-    endUnitTurn(rt, world);
-
     elapsed_time = 0.0f;
   }
-  
 
   return ui_ctrl;
 }
@@ -755,17 +747,17 @@ void Viz::renderGeo(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
       } else if (ActorType(gen_id.type) == ActorType::Unit) {
         UnitID id = UnitID::fromGeneric(gen_id);
         
-        UnitRef unit = world->units.get(rt, id);
+        UnitPtr unit = world->units.get(rt, id);
 
-        if (!unit || *unit.hp <= 0) {
+        if (!unit || unit->hp <= 0) {
           continue;
         }
 
         enc.drawData(UnitsPerDraw {
           .txfm = computeNonUniformScaleTxfm(
-            { float(unit.pos->x), float(unit.pos->y), 0 },
+            { float(unit->pos.x), float(unit->pos.y), 0 },
             Quat::id(), { 0.35f, 0.35f, 0.5f }),
-          .color = (*unit.team == 0) ?
+          .color = (unit->team == 0) ?
             Vector4(1, 0, 0, 1) :
             Vector4(0, 0, 1, 1),
         });

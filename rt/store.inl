@@ -140,8 +140,8 @@ ElemT * TemporaryStore<ElemT, ItemsPerChunk>::get(i32 idx)
   
 inline constexpr i32 NUM_INIT_CHUNK_PTRS = 16;
 
-template <typename ID, typename ChunkT, typename RefT>
-void PersistentStore<ID, ChunkT, RefT>::init(Runtime &rt, MemArena &arena_in)
+template <typename ID, typename ChunkT, typename PtrT>
+void PersistentStore<ID, ChunkT, PtrT>::init(Runtime &rt, MemArena &arena_in)
 {
   arena = &arena_in;
 
@@ -151,19 +151,19 @@ void PersistentStore<ID, ChunkT, RefT>::init(Runtime &rt, MemArena &arena_in)
   lastChunkNumAllocated = ChunkT::SIZE;
 }
 
-template <typename ID, typename ChunkT, typename RefT>
-ID PersistentStore<ID, ChunkT, RefT>::create(Runtime &rt, u32 type_id)
+template <typename ID, typename ChunkT, typename PtrT>
+PtrT PersistentStore<ID, ChunkT, PtrT>::create(Runtime &rt, u32 type_id)
 {
   if (freeList.chunk != 0) {
     ID actor = freeList;
 
     StoreChunk *chunk = getChunk(rt, actor);
 
-    freeList = chunk->nextFrees[actor.offset];
+    freeList = chunk->user.id[actor.offset];
 
     actor.type = type_id;
 
-    return actor;
+    return PtrT(&chunk->user, actor.offset);
   }
 
   if (lastChunkNumAllocated == ChunkT::SIZE) {
@@ -193,28 +193,31 @@ ID PersistentStore<ID, ChunkT, RefT>::create(Runtime &rt, u32 type_id)
   i32 chunk_idx = numChunks - 1;
   i32 offset = lastChunkNumAllocated += 1;
 
-  StoreChunk *chunk = chunks[chunk_idx];
-  chunk->gens[offset] = 0;
-  chunk->activeMask[offset / 32] |= (1 << (offset % 32));
-
   chk(offset <= ChunkT::SIZE);
 
+  StoreChunk *chunk = chunks[chunk_idx];
+  
   u32 chunk_hdl = ((char *)chunk - (char *)rt.state()) / alignof(StoreChunk);
 
-  return ID {
+  ID id = {
     .type = type_id,
     .offset = (u32)offset,
     .gen = 0,
     .chunk = chunk_hdl,
   };
+  
+  chunk->user.id[offset] = id;
+  chunk->activeMask[offset / 32] |= (1 << (offset % 32));
+
+  return PtrT(&chunk->user, offset);
 }
 
-template <typename ID, typename ChunkT, typename RefT>
-void PersistentStore<ID, ChunkT, RefT>::destroy(Runtime &rt, ID actor)
+template <typename ID, typename ChunkT, typename PtrT>
+void PersistentStore<ID, ChunkT, PtrT>::destroy(Runtime &rt, ID actor)
 {
   StoreChunk *chunk = getChunk(rt, actor);
 
-  if (actor.gen != chunk->gens[actor.offset]) {
+  if (actor.gen != chunk->id[actor.offset].gen) {
     return;
   }
 
@@ -226,8 +229,8 @@ void PersistentStore<ID, ChunkT, RefT>::destroy(Runtime &rt, ID actor)
   freeList = actor;
 }
 
-template <typename ID, typename ChunkT, typename RefT>
-i32 PersistentStore<ID, ChunkT, RefT>::size()
+template <typename ID, typename ChunkT, typename PtrT>
+i32 PersistentStore<ID, ChunkT, PtrT>::size()
 {
   i32 num_actors = 0;
   for (i32 i = 0; i < numChunks; i++) {
@@ -239,8 +242,8 @@ i32 PersistentStore<ID, ChunkT, RefT>::size()
   return num_actors;
 }
 
-template <typename ID, typename ChunkT, typename RefT>
-RefT PersistentStore<ID, ChunkT, RefT>::get(Runtime &rt, ID actor, bool verify)
+template <typename ID, typename ChunkT, typename PtrT>
+PtrT PersistentStore<ID, ChunkT, PtrT>::get(Runtime &rt, ID actor, bool verify)
 {
   StoreChunk *chunk = getChunk(rt, actor);
 
@@ -248,22 +251,22 @@ RefT PersistentStore<ID, ChunkT, RefT>::get(Runtime &rt, ID actor, bool verify)
 
   if (verify) {
     if (!chunk) {
-      return {};
+      return PtrT(nullptr, 0);
     }
 
-    u16 gen = chunk->gens[offset];
+    u16 gen = chunk->user.id[offset].gen;
 
     if (actor.gen != gen) {
-      return {};
+      return PtrT(nullptr, 0);
     }
   }
 
-  return chunk->user.get(offset);
+  return PtrT(&chunk->user, offset);
 }
 
-template <typename ID, typename ChunkT, typename RefT>
-PersistentStore<ID, ChunkT, RefT>::StoreChunk * 
-PersistentStore<ID, ChunkT, RefT>::getChunk(Runtime &rt, ID id)
+template <typename ID, typename ChunkT, typename PtrT>
+PersistentStore<ID, ChunkT, PtrT>::StoreChunk * 
+PersistentStore<ID, ChunkT, PtrT>::getChunk(Runtime &rt, ID id)
 {
   if (id.chunk == 0) [[unlikely]] {
     return nullptr;
