@@ -7,28 +7,33 @@ namespace bot {
 
 static inline void unlinkUnitFromTurnOrder(SimRT &rt, World *world, UnitID id)
 {
-  if (id == UnitID::none()) return;
   UnitRef u = world->units.get(rt, id);
-  if (!u) return;
+  TurnListLinkedList *turnListItem = u.turnListItem;
 
-  UnitID prev = *u.prevTurn;
-  UnitID next = *u.nextTurn;
+  UnitID prev_id = turnListItem->prev;
+  UnitID next_id = turnListItem->next;
 
-  if (prev != UnitID::none()) {
-    UnitRef p = world->units.get(rt, prev);
-    *p.nextTurn = next;
-  } else {
-    world->turnHead = next;
+  if (prev_id) {
+    UnitRef prev = world->units.get(rt, prev_id);
+    prev.turnListItem->next = next_id;
   }
+  
+  for (i32 i = 0; i < TEAM_SIZE; i++) {
+    if (world->playerTeam[i] == id) {
+      world->playerTeam[i] = UnitID::none();
+    }
+  }
+  
+  
 
-  if (next != UnitID::none()) {
+  if (next) {
     UnitRef n = world->units.get(rt, next);
     *n.prevTurn = prev;
   }
 
   *u.prevTurn = UnitID::none();
   *u.nextTurn = UnitID::none();
-
+  
   if (world->turnCur == id) {
     world->turnCur = next != UnitID::none() ? next : world->turnHead;
   }
@@ -233,7 +238,7 @@ void curUnitAttack(SimRT &rt, World *world, AttackAction action)
   // Check bounds
   if (tx >= 0 && tx < GRID_SIZE && ty >= 0 && ty < GRID_SIZE) {
     GenericID target_gen_id = world->grid[ty][tx].actorID;
-    if (target_gen_id != GenericID::none()) {
+    if (target_gen_id) {
       UnitID target_id = UnitID::fromGeneric(target_gen_id);
       UnitRef target_unit = world->units.get(rt, target_id);
       if (target_unit && *target_unit.hp > 0 && *target_unit.team != *unit.team) {

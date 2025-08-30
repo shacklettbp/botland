@@ -26,19 +26,21 @@ enum class ActorType : u32 {
   Static,
 };
 
-struct MoveAction {
-  i32 deltaX = 0;
-  i32 deltaY = 0;
+enum class MoveAction : u32 {
+  Wait = 0,
+  Left,
+  Up,
+  Right,
+  Down,
 };
 
-struct AttackAction {
-  i32 deltaX = 0;
-  i32 deltaY = 0;
+enum class AttackType : u32 {
+  Melee,
+  RangedGapOne,
 };
 
 struct UnitAction {
-  MoveAction move = {};
-  AttackAction attack = {};
+  MoveAction move = MoveAction::Wait;
 };
 
 struct GridCellOb {
@@ -49,13 +51,18 @@ struct UnitObservation {
   GridCellOb grid[GRID_SIZE][GRID_SIZE];
 };
 
+struct TurnListLinkedList {
+  UnitID prev = {};
+  UnitID next = {};
+};
+
 #define UNIT_FIELDS(F) \
+  F(AttackType, attackType) \
+  F(i32, speed) \
   F(GridPos, pos) \
   F(i32, hp) \
-  F(i32, speed) \
   F(i32, team) \
-  F(UnitID, nextTurn) \
-  F(UnitID, prevTurn)
+  F(TurnListLinkedList, turnListItem)
 
 BOT_PERSISTENT_STORE(Unit, 64, UNIT_FIELDS)
 
