@@ -7,19 +7,19 @@ namespace bot {
 
 static inline void unlinkUnitFromTurnOrder(SimRT &rt, World *world, UnitID id)
 {
-  UnitPtr u = world->units.get(rt, id);
+  UnitPtr u = world->units.get(id);
   TurnListLinkedList &turnListItem = u->turnListItem;
 
   UnitID prev_id = turnListItem.prev;
   UnitID next_id = turnListItem.next;
 
   if (prev_id) {
-    UnitPtr prev = world->units.get(rt, prev_id);
+    UnitPtr prev = world->units.get(prev_id);
     prev->turnListItem.next = next_id;
   }
   
   if (next_id) {
-    UnitPtr next = world->units.get(rt, next_id);
+    UnitPtr next = world->units.get(next_id);
     next->turnListItem.prev = prev_id;
   }
 
@@ -50,7 +50,7 @@ World * createWorld(
       i32 spawn_x = base_spawn_x++;
       i32 spawn_y = 0;
 
-      UnitPtr u = world->units.create(rt, (u32)ActorType::Unit);
+      UnitPtr u = world->units.create((u32)ActorType::Unit);
 
       world->playerTeam[i] = u->id;
       world->grid[spawn_y][spawn_x].actorID = u->id.toGeneric();
@@ -69,7 +69,7 @@ World * createWorld(
       i32 spawn_x = base_spawn_x++; 
       i32 spawn_y = GRID_SIZE - 1;
 
-      UnitPtr u = world->units.create(rt, (u32)ActorType::Unit);
+      UnitPtr u = world->units.create((u32)ActorType::Unit);
 
       world->enemyTeam[i] = u->id;
       world->grid[spawn_y][spawn_x].actorID = u->id.toGeneric();
@@ -96,11 +96,11 @@ World * createWorld(
 
     i32 idx = 0;
     for (i32 i = 0; i < TEAM_SIZE; i++) {
-      UnitPtr u = world->units.get(rt, world->playerTeam[i]);
+      UnitPtr u = world->units.get(world->playerTeam[i]);
       sort_tmp[idx++] = { u->id, u->speed };
     }
     for (i32 i = 0; i < TEAM_SIZE; i++) {
-      UnitPtr u = world->units.get(rt, world->enemyTeam[i]);
+      UnitPtr u = world->units.get(world->enemyTeam[i]);
       sort_tmp[idx++] = { u->id, u->speed };
     }
 
@@ -119,7 +119,7 @@ World * createWorld(
     world->turnHead = sort_tmp[0].id;
     world->turnCur = world->turnHead;
     for (i32 i = 0; i < world->numAliveUnits; i++) {
-      UnitPtr u = world->units.get(rt, sort_tmp[i].id);
+      UnitPtr u = world->units.get(sort_tmp[i].id);
       UnitID prev = (i == 0) ? sort_tmp[world->numAliveUnits - 1].id : sort_tmp[i - 1].id;
       UnitID next = (i == world->numAliveUnits - 1) ? sort_tmp[0].id : sort_tmp[i + 1].id;
       u->turnListItem.prev = prev;
@@ -135,7 +135,7 @@ void curUnitMove(SimRT &rt, World *world, MoveAction action)
 {
   UnitID cur_unit_id = world->turnCur;
 
-  UnitRef unit = world->units.get(rt, cur_unit_id);
+  UnitRef unit = world->units.get(cur_unit_id);
   assert(unit && *unit.hp > 0);
   
   // Calculate target position
@@ -172,7 +172,7 @@ void curUnitMove(SimRT &rt, World *world, MoveAction action)
       GenericID aid = world->grid[y][x].actorID;
       if (aid == GenericID::none()) return false;
       UnitID oid = UnitID::fromGeneric(aid);
-      UnitRef o = world->units.get(rt, oid);
+      UnitRef o = world->units.get(oid);
       return (o && *o.team != *unit.team);
     };
     
@@ -221,7 +221,7 @@ void curUnitMove(SimRT &rt, World *world, MoveAction action)
 void curUnitAttack(SimRT &rt, World *world, AttackAction action)
 {
   UnitID cur_unit_id = world->turnCur;
-  UnitRef unit = world->units.get(rt, cur_unit_id);
+  UnitRef unit = world->units.get(cur_unit_id);
   assert(unit && *unit.hp > 0);
 
   // Delta-based attack: (0,0) is noop
@@ -238,7 +238,7 @@ void curUnitAttack(SimRT &rt, World *world, AttackAction action)
     GenericID target_gen_id = world->grid[ty][tx].actorID;
     if (target_gen_id) {
       UnitID target_id = UnitID::fromGeneric(target_gen_id);
-      UnitRef target_unit = world->units.get(rt, target_id);
+      UnitRef target_unit = world->units.get(target_id);
       if (target_unit && *target_unit.hp > 0 && *target_unit.team != *unit.team) {
         // Attack: for now, just decrement HP by 1
         *target_unit.hp -= 1;
@@ -259,11 +259,11 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
   {
     // Advance to next alive unit
     if (world->turnCur) {
-      UnitPtr cur = world->units.get(rt, world->turnCur);
+      UnitPtr cur = world->units.get(world->turnCur);
       UnitID next_id = cur->turnListItem.next ? cur->turnListItem.next : world->turnHead;
 
       while (next_id) {
-        UnitPtr next = world->units.get(rt, next_id);
+        UnitPtr next = world->units.get(next_id);
         next_id = next->turnListItem.next ? next->turnListItem.next : world->turnHead;
       }
     }

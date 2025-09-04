@@ -8,13 +8,8 @@ This project uses CMake with Ninja as the build system. The main build commands 
 
 ```bash
 # Configure and build (from project root)
-cmake -B build -G Ninja
+cmake -S. -B build -G Ninja
 ninja -C build
-
-# Build specific targets
-ninja -C build backend_headless  # Headless backend executable  
-ninja -C build native_frontend    # Native frontend executable
-ninja -C build viz               # Visualization components
 ```
 
 ## Architecture Overview

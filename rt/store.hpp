@@ -52,6 +52,7 @@ struct PersistentStore {
     u32 activeMask[ChunkT::SIZE / 32];
   };
 
+  RTStateHandle stateHdl = {};
   MemArena *arena = nullptr;
   StoreChunk **chunks = nullptr;
   i32 numChunks = 0;
@@ -61,31 +62,30 @@ struct PersistentStore {
   ID freeList = {};
 
   void init(Runtime &rt, MemArena &arena);
-  PtrT create(Runtime &rt, u32 type_id);
-  void destroy(Runtime &rt, ID actor);
-  inline PtrT get(Runtime &rt, ID actor, bool verify = true);
+  PtrT create(u32 type_id);
+  void destroy(ID actor);
+  inline PtrT get(ID actor, bool verify = true);
 
-  inline StoreChunk * getChunk(Runtime &rt, ID actor);
+  inline StoreChunk * getChunk(ID actor);
 
   i32 size();
 
   class Iterator {
   private:
     PersistentStore *store;
-    Runtime *rt;
     i32 chunkIdx;
     i32 itemIdx;
     
     void advance();
     
   public:
-    Iterator(PersistentStore *s, Runtime *r, i32 chunk, i32 item)
-      : store(s), rt(r), chunkIdx(chunk), itemIdx(item) {
+    Iterator(PersistentStore *s, i32 chunk, i32 item)
+      : store(s), chunkIdx(chunk), itemIdx(item) {
       advance();
     }
     
     using iterator_category = std::forward_iterator_tag;
-    using value_type = std::pair<ID, PtrT>;
+    using value_type = typename PtrT::RefT;
     using difference_type = std::ptrdiff_t;
     using pointer = value_type*;
     using reference = value_type;
@@ -97,19 +97,8 @@ struct PersistentStore {
     bool operator!=(const Iterator& other) const;
   };
   
-  Iterator begin(Runtime &rt);
-  Iterator end(Runtime &rt);
-  
-  struct Range {
-    PersistentStore *store;
-    Runtime *rt;
-    
-    Range(PersistentStore *s, Runtime *r) : store(s), rt(r) {}
-    Iterator begin() { return store->begin(*rt); }
-    Iterator end() { return store->end(*rt); }
-  };
-  
-  Range iterate(Runtime &rt) { return Range(this, &rt); }
+  Iterator begin();
+  Iterator end();
 };
 
 struct GenericID {
@@ -225,15 +214,17 @@ struct GenericID {
   }; \
   class name##Ptr { \
   public: \
+    using RefT = name##Ref; \
     name##Ptr(name##Chunk *chunk, i32 offset) : chunk_(chunk), offset_(offset) {} \
     operator bool() const { return !!chunk_; } \
-    name##Ref operator->() const \
+    name##Ref operator*() const \
     { \
       return name##Ref { \
         .id = chunk_->id[offset_], \
         FIELDS(BOT_PERSISTENT_STORE_PTR_DEREF_DEF) \
       }; \
     } \
+    name##Ref operator->() const { return operator*(); } \
   private: \
     name##Chunk *chunk_ = nullptr; \
     i32 offset_ = 0; \

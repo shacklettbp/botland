@@ -735,41 +735,25 @@ void Viz::renderGeo(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
   enc.setShader(materials.unitsShader);
   enc.setVertexBuffer(0, scene.geoBuffer);
   enc.setIndexBufferU32(scene.geoBuffer);
+  
+  for (auto unit : world->units) {
+    assert(unit->hp > 0);
+    
+    enc.drawData(UnitsPerDraw {
+      .txfm = computeNonUniformScaleTxfm(
+        { float(unit->pos.x), float(unit->pos.y), 0 },
+        Quat::id(), { 0.35f, 0.35f, 0.5f }),
+      .color = (unit->team == 0) ?
+        Vector4(1, 0, 0, 1) :
+        Vector4(0, 0, 1, 1),
+    });
 
-  for (i32 y = 0; y < GRID_SIZE; y++) {
-    for (i32 x = 0; x < GRID_SIZE; x++) {
-      Cell cell = world->grid[y][x];
+    RenderObject obj = scene.renderObjects[1];
 
-      GenericID gen_id = cell.actorID;
-
-      if (ActorType(gen_id.type) == ActorType::None) {
-        continue;
-      } else if (ActorType(gen_id.type) == ActorType::Unit) {
-        UnitID id = UnitID::fromGeneric(gen_id);
-        
-        UnitPtr unit = world->units.get(rt, id);
-
-        if (!unit || unit->hp <= 0) {
-          continue;
-        }
-
-        enc.drawData(UnitsPerDraw {
-          .txfm = computeNonUniformScaleTxfm(
-            { float(unit->pos.x), float(unit->pos.y), 0 },
-            Quat::id(), { 0.35f, 0.35f, 0.5f }),
-          .color = (unit->team == 0) ?
-            Vector4(1, 0, 0, 1) :
-            Vector4(0, 0, 1, 1),
-        });
-
-        RenderObject obj = scene.renderObjects[1];
-
-        for (u32 mesh_idx = 0; mesh_idx < obj.numMeshes; mesh_idx++) {
-          RenderMesh mesh = scene.renderMeshes[obj.meshOffset + mesh_idx];
-          enc.drawIndexed(mesh.vertexOffset, mesh.indexOffset,
-                          mesh.numTriangles);
-        }
-      }
+    for (u32 mesh_idx = 0; mesh_idx < obj.numMeshes; mesh_idx++) {
+      RenderMesh mesh = scene.renderMeshes[obj.meshOffset + mesh_idx];
+      enc.drawIndexed(mesh.vertexOffset, mesh.indexOffset,
+                      mesh.numTriangles);
     }
   }
 }

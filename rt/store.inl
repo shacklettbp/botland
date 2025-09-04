@@ -143,21 +143,23 @@ inline constexpr i32 NUM_INIT_CHUNK_PTRS = 16;
 template <typename ID, typename ChunkT, typename PtrT>
 void PersistentStore<ID, ChunkT, PtrT>::init(Runtime &rt, MemArena &arena_in)
 {
+  stateHdl = rt.stateHandle();
   arena = &arena_in;
 
-  chunks = rt.arenaAllocN<StoreChunk *>(*arena, NUM_INIT_CHUNK_PTRS);
+  chunks = (StoreChunk **)arenaAlloc(stateHdl, *arena, 
+    sizeof(StoreChunk *) * NUM_INIT_CHUNK_PTRS, alignof(StoreChunk *));
 
   chunksCapacity = NUM_INIT_CHUNK_PTRS;
   lastChunkNumAllocated = ChunkT::SIZE;
 }
 
 template <typename ID, typename ChunkT, typename PtrT>
-PtrT PersistentStore<ID, ChunkT, PtrT>::create(Runtime &rt, u32 type_id)
+PtrT PersistentStore<ID, ChunkT, PtrT>::create(u32 type_id)
 {
   if (freeList.chunk != 0) {
     ID actor = freeList;
 
-    StoreChunk *chunk = getChunk(rt, actor);
+    StoreChunk *chunk = getChunk(actor);
 
     freeList = chunk->user.id[actor.offset];
 
@@ -170,8 +172,8 @@ PtrT PersistentStore<ID, ChunkT, PtrT>::create(Runtime &rt, u32 type_id)
     if (chunksCapacity == numChunks) {
       i32 new_capacity = chunksCapacity * 2;
 
-      StoreChunk **new_chunks =
-          rt.arenaAllocN<StoreChunk *>(*arena, new_capacity);
+      StoreChunk **new_chunks = (StoreChunk **)arenaAlloc(stateHdl, *arena,
+          sizeof(StoreChunk *) * new_capacity, alignof(StoreChunk *));
 
       copyN<StoreChunk *>(new_chunks, chunks, chunksCapacity);
 
@@ -179,7 +181,8 @@ PtrT PersistentStore<ID, ChunkT, PtrT>::create(Runtime &rt, u32 type_id)
       chunksCapacity = new_capacity;
     }
 
-    StoreChunk *new_chunk = chunks[numChunks] = rt.arenaAlloc<StoreChunk>(*arena);
+    StoreChunk *new_chunk = chunks[numChunks] = (StoreChunk *)arenaAlloc(stateHdl, *arena,
+        sizeof(StoreChunk), alignof(StoreChunk));
 
     BOT_UNROLL
     for (i32 i = 0; i < ChunkT::SIZE / 32; i++) {
@@ -197,7 +200,7 @@ PtrT PersistentStore<ID, ChunkT, PtrT>::create(Runtime &rt, u32 type_id)
 
   StoreChunk *chunk = chunks[chunk_idx];
   
-  u32 chunk_hdl = ((char *)chunk - (char *)rt.state()) / alignof(StoreChunk);
+  u32 chunk_hdl = ((char *)chunk - (char *)getRuntimeState(stateHdl)) / alignof(StoreChunk);
 
   ID id = {
     .type = type_id,
@@ -213,19 +216,19 @@ PtrT PersistentStore<ID, ChunkT, PtrT>::create(Runtime &rt, u32 type_id)
 }
 
 template <typename ID, typename ChunkT, typename PtrT>
-void PersistentStore<ID, ChunkT, PtrT>::destroy(Runtime &rt, ID actor)
+void PersistentStore<ID, ChunkT, PtrT>::destroy(ID actor)
 {
-  StoreChunk *chunk = getChunk(rt, actor);
+  StoreChunk *chunk = getChunk(actor);
 
-  if (actor.gen != chunk->id[actor.offset].gen) {
+  if (actor.gen != chunk->user.id[actor.offset].gen) {
     return;
   }
 
-  chunk->gens[actor.offset]++;
+  chunk->user.id[actor.offset].gen++;
 
   chunk->activeMask[actor.offset / 32] &= ~(1 << (actor.offset % 32));
 
-  chunk->nextFrees[actor.offset] = freeList;
+  chunk->user.id[actor.offset] = freeList;
   freeList = actor;
 }
 
@@ -243,9 +246,9 @@ i32 PersistentStore<ID, ChunkT, PtrT>::size()
 }
 
 template <typename ID, typename ChunkT, typename PtrT>
-PtrT PersistentStore<ID, ChunkT, PtrT>::get(Runtime &rt, ID actor, bool verify)
+PtrT PersistentStore<ID, ChunkT, PtrT>::get(ID actor, bool verify)
 {
-  StoreChunk *chunk = getChunk(rt, actor);
+  StoreChunk *chunk = getChunk(actor);
 
   i32 offset = actor.offset;
 
@@ -266,13 +269,13 @@ PtrT PersistentStore<ID, ChunkT, PtrT>::get(Runtime &rt, ID actor, bool verify)
 
 template <typename ID, typename ChunkT, typename PtrT>
 PersistentStore<ID, ChunkT, PtrT>::StoreChunk * 
-PersistentStore<ID, ChunkT, PtrT>::getChunk(Runtime &rt, ID id)
+PersistentStore<ID, ChunkT, PtrT>::getChunk(ID id)
 {
   if (id.chunk == 0) [[unlikely]] {
     return nullptr;
   }
 
-  return (StoreChunk *)((char *)rt.state() + (u64)id.chunk * alignof(StoreChunk));
+  return (StoreChunk *)((char *)getRuntimeState(stateHdl) + (u64)id.chunk * alignof(StoreChunk));
 }
 
 template <typename ID, typename ChunkT, typename PtrT>
@@ -301,9 +304,8 @@ typename PersistentStore<ID, ChunkT, PtrT>::Iterator::reference
 PersistentStore<ID, ChunkT, PtrT>::Iterator::operator*() const
 {
   StoreChunk *chunk = store->chunks[chunkIdx];
-  ID id = chunk->user.id[itemIdx];
   PtrT ptr(&chunk->user, itemIdx);
-  return std::make_pair(id, ptr);
+  return *ptr;
 }
 
 template <typename ID, typename ChunkT, typename PtrT>
@@ -338,16 +340,16 @@ bool PersistentStore<ID, ChunkT, PtrT>::Iterator::operator!=(const Iterator& oth
 
 template <typename ID, typename ChunkT, typename PtrT>
 typename PersistentStore<ID, ChunkT, PtrT>::Iterator
-PersistentStore<ID, ChunkT, PtrT>::begin(Runtime &rt)
+PersistentStore<ID, ChunkT, PtrT>::begin()
 {
-  return Iterator(this, &rt, 0, 0);
+  return Iterator(this, 0, 0);
 }
 
 template <typename ID, typename ChunkT, typename PtrT>
 typename PersistentStore<ID, ChunkT, PtrT>::Iterator
-PersistentStore<ID, ChunkT, PtrT>::end(Runtime &rt)
+PersistentStore<ID, ChunkT, PtrT>::end()
 {
-  return Iterator(this, &rt, numChunks, 0);
+  return Iterator(this, numChunks, 0);
 }
 
 #if 0
