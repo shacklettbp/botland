@@ -275,6 +275,81 @@ PersistentStore<ID, ChunkT, PtrT>::getChunk(Runtime &rt, ID id)
   return (StoreChunk *)((char *)rt.state() + (u64)id.chunk * alignof(StoreChunk));
 }
 
+template <typename ID, typename ChunkT, typename PtrT>
+void PersistentStore<ID, ChunkT, PtrT>::Iterator::advance()
+{
+  while (chunkIdx < store->numChunks) {
+    if (itemIdx >= ChunkT::SIZE) {
+      chunkIdx++;
+      itemIdx = 0;
+      continue;
+    }
+    
+    StoreChunk *chunk = store->chunks[chunkIdx];
+    bool active = (chunk->activeMask[itemIdx / 32] & (1 << (itemIdx % 32))) != 0;
+    
+    if (active) {
+      return;
+    }
+    
+    itemIdx++;
+  }
+}
+
+template <typename ID, typename ChunkT, typename PtrT>
+typename PersistentStore<ID, ChunkT, PtrT>::Iterator::reference 
+PersistentStore<ID, ChunkT, PtrT>::Iterator::operator*() const
+{
+  StoreChunk *chunk = store->chunks[chunkIdx];
+  ID id = chunk->user.id[itemIdx];
+  PtrT ptr(&chunk->user, itemIdx);
+  return std::make_pair(id, ptr);
+}
+
+template <typename ID, typename ChunkT, typename PtrT>
+typename PersistentStore<ID, ChunkT, PtrT>::Iterator&
+PersistentStore<ID, ChunkT, PtrT>::Iterator::operator++()
+{
+  itemIdx++;
+  advance();
+  return *this;
+}
+
+template <typename ID, typename ChunkT, typename PtrT>
+typename PersistentStore<ID, ChunkT, PtrT>::Iterator
+PersistentStore<ID, ChunkT, PtrT>::Iterator::operator++(int)
+{
+  Iterator tmp = *this;
+  ++(*this);
+  return tmp;
+}
+
+template <typename ID, typename ChunkT, typename PtrT>
+bool PersistentStore<ID, ChunkT, PtrT>::Iterator::operator==(const Iterator& other) const
+{
+  return chunkIdx == other.chunkIdx && itemIdx == other.itemIdx;
+}
+
+template <typename ID, typename ChunkT, typename PtrT>
+bool PersistentStore<ID, ChunkT, PtrT>::Iterator::operator!=(const Iterator& other) const
+{
+  return !(*this == other);
+}
+
+template <typename ID, typename ChunkT, typename PtrT>
+typename PersistentStore<ID, ChunkT, PtrT>::Iterator
+PersistentStore<ID, ChunkT, PtrT>::begin(Runtime &rt)
+{
+  return Iterator(this, &rt, 0, 0);
+}
+
+template <typename ID, typename ChunkT, typename PtrT>
+typename PersistentStore<ID, ChunkT, PtrT>::Iterator
+PersistentStore<ID, ChunkT, PtrT>::end(Runtime &rt)
+{
+  return Iterator(this, &rt, numChunks, 0);
+}
+
 #if 0
 template <typename ID, typename ChunkT, typename RefT>
 template <typename FnT>

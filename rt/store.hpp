@@ -68,6 +68,48 @@ struct PersistentStore {
   inline StoreChunk * getChunk(Runtime &rt, ID actor);
 
   i32 size();
+
+  class Iterator {
+  private:
+    PersistentStore *store;
+    Runtime *rt;
+    i32 chunkIdx;
+    i32 itemIdx;
+    
+    void advance();
+    
+  public:
+    Iterator(PersistentStore *s, Runtime *r, i32 chunk, i32 item)
+      : store(s), rt(r), chunkIdx(chunk), itemIdx(item) {
+      advance();
+    }
+    
+    using iterator_category = std::forward_iterator_tag;
+    using value_type = std::pair<ID, PtrT>;
+    using difference_type = std::ptrdiff_t;
+    using pointer = value_type*;
+    using reference = value_type;
+    
+    reference operator*() const;
+    Iterator& operator++();
+    Iterator operator++(int);
+    bool operator==(const Iterator& other) const;
+    bool operator!=(const Iterator& other) const;
+  };
+  
+  Iterator begin(Runtime &rt);
+  Iterator end(Runtime &rt);
+  
+  struct Range {
+    PersistentStore *store;
+    Runtime *rt;
+    
+    Range(PersistentStore *s, Runtime *r) : store(s), rt(r) {}
+    Iterator begin() { return store->begin(*rt); }
+    Iterator end() { return store->end(*rt); }
+  };
+  
+  Range iterate(Runtime &rt) { return Range(this, &rt); }
 };
 
 struct GenericID {
