@@ -2,6 +2,7 @@
 #include "prims.hpp"
 #include <rt/log.hpp>
 #include <rt/math.hpp>
+#include <cstdio>
 
 namespace bot {
 
@@ -60,6 +61,7 @@ World * createWorld(
       u->speed = DEFAULT_SPEED;
       u->team = 0;
       u->attackType = AttackType::Melee;
+      snprintf(u->name.data, sizeof(u->name.data), "Unit %d", i);
     }
   }
 
@@ -80,6 +82,7 @@ World * createWorld(
       u->speed = DEFAULT_SPEED;
       u->team = 1;
       u->attackType = AttackType::Melee;
+      snprintf(u->name.data, sizeof(u->name.data), "Unit %d", i + TEAM_SIZE);
     }
   }
 

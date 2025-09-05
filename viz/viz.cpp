@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <filesystem>
 #include <rt/math.hpp>
+#include <cstring>
 
 #include <gas/gas_imgui.hpp>
 
@@ -346,11 +347,64 @@ void Viz::initMaterials()
       },
     });
   }
+  
+  {
+    // Initialize font atlas
+    MemArena dummyArena = {}; // Not used anymore, font uses static allocation
+    fontAtlas.init(dummyArena, 24.0f); // 24px font size
+    fontAtlas.createGPUTexture(gpu, mainQueue);
+    gpu->waitUntilWorkFinished(mainQueue);
+    
+    // Create text rendering resources
+    materials.textPBType = gpu->createParamBlockType({
+      .uuid = "text_materials_pb_type"_to_uuid,
+      .textures = {
+        { .shaderUsage = ShaderStage::Fragment },
+      },
+      .samplers = {
+        { .type = SamplerBindingType::Filtering },
+      },
+    });
+    
+    materials.textPB = gpu->createParamBlock({
+      .typeID = materials.textPBType,
+      .textures = { fontAtlas.texture },
+      .samplers = { bilinearRepeatSampler },
+    });
+    
+    materials.textShader = gpu->createRasterShader({
+      .byteCode = shaders.getByteCode(MaterialShaderID::Text),
+      .vertexEntry = "vertMain",
+      .fragmentEntry = "fragMain",
+      .rasterPass = hdrPassInterface,
+      .paramBlockTypes = { globalDataPBType, materials.textPBType },
+      .numPerDrawBytes = sizeof(shader::TextPerDraw),
+      .rasterConfig = {
+        .depthCompare = DepthCompare::GreaterOrEqual,
+        .cullMode = CullMode::None,
+        .blending = {
+          {
+            .colorOp = BlendOperation::Add,
+            .srcColorFactor = BlendFactor::SrcAlpha,
+            .dstColorFactor = BlendFactor::OneMinusSrcAlpha,
+            .alphaOp = BlendOperation::Add,
+            .srcAlphaFactor = BlendFactor::One,
+            .dstAlphaFactor = BlendFactor::OneMinusSrcAlpha,
+          }
+        },
+      },
+    });
+  }
 }
 
 void Viz::cleanupMaterials()
 {
   {
+    gpu->destroyRasterShader(materials.textShader);
+    gpu->destroyParamBlock(materials.textPB);
+    gpu->destroyParamBlockType(materials.textPBType);
+    fontAtlas.destroy(gpu);
+    
     gpu->destroyRasterShader(materials.healthBarShader);
     gpu->destroyRasterShader(materials.unitsShader);
   }
@@ -911,6 +965,36 @@ void Viz::renderUnits(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
     
     // Draw triangles for the arc (16 segments * 2 triangles = 32 triangles)
     enc.draw(0, 32);
+  }
+  
+  // Third pass: render unit names
+  enc.setShader(materials.textShader);
+  enc.setParamBlock(0, frame.input.globalDataPB);
+  enc.setParamBlock(1, materials.textPB);
+  
+  for (auto unit : world->units) {
+    // Prepare text data
+    shader::TextPerDraw textData = {};
+    textData.worldPos = { float(unit->pos.x), float(unit->pos.y), 0.5f };
+    textData.scale = 0.4f; // Adjust scale as needed
+    textData.color = (unit->team == 0) ?
+      Vector4(1.0f, 0.2f, 0.2f, 1.0f) :  // Red team
+      Vector4(0.2f, 0.2f, 1.0f, 1.0f);   // Blue team
+    
+    // Convert unit name to UV coordinates
+    const char* name = unit->name.data;
+    u32 nameLen = strlen(name);
+    textData.numChars = (nameLen > 4) ? 4 : nameLen; // Max 4 chars for now
+    
+    for (u32 i = 0; i < textData.numChars; i++) {
+      CharInfo charInfo = fontAtlas.getCharInfo(name[i]);
+      textData.charUVs[i] = Vector4(charInfo.x0, charInfo.y0, charInfo.x1, charInfo.y1);
+    }
+    
+    enc.drawData(textData);
+    
+    // Draw quads for text (6 vertices per character)
+    enc.draw(0, textData.numChars * 6);
   }
 }
 

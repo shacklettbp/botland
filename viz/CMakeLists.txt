@@ -14,15 +14,18 @@ gas_add_shaders(TARGET bot-viz-material-shaders
     Board board.slang
     Units units.slang
     HealthBar healthbar.slang
+    Text text.slang
 )
 
 add_library(bot-viz STATIC
   viz.hpp viz.cpp
+  font.hpp font.cpp
 )
 
 target_link_libraries(bot-viz PUBLIC
   gas_core gas_imgui gas_ui
-  bot-viz-global-shaders bot-viz-material-shaders)
+  bot-viz-global-shaders bot-viz-material-shaders
+  stb)
 
 target_compile_definitions(bot-viz PRIVATE
   -DBOT_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../data/"

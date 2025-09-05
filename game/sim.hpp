@@ -59,13 +59,18 @@ struct TurnListLinkedList {
   UnitID next = {};
 };
 
+struct UnitName {
+  char data[16];
+};
+
 #define UNIT_FIELDS(F) \
   F(AttackType, attackType) \
   F(i32, speed) \
   F(GridPos, pos) \
   F(i32, hp) \
   F(i32, team) \
-  F(TurnListLinkedList, turnListItem)
+  F(TurnListLinkedList, turnListItem) \
+  F(UnitName, name)
 
 BOT_PERSISTENT_STORE(Unit, UnitID, 64, UNIT_FIELDS)
 

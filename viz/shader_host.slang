@@ -54,4 +54,15 @@ PUB struct HealthBarPerDraw {
   float pad0 = 0;
 };
 
+PUB struct TextPerDraw {
+  PUB float3 worldPos;
+  PUB float scale;
+  PUB float4 color;
+  PUB float4 charUVs[4];  // UV coordinates for up to 4 characters
+  PUB uint numChars;
+  uint pad0;
+  uint pad1;
+  uint pad2;
+};
+
 #undef PUB

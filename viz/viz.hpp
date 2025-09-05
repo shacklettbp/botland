@@ -5,6 +5,7 @@
 #include <gas/gas_imgui.hpp>
 
 #include "game/sim.hpp"
+#include "font.hpp"
 
 #include <vector>
 
@@ -81,6 +82,11 @@ struct Materials {
   
   // Health bars
   RasterShader healthBarShader = {};
+  
+  // Text rendering
+  RasterShader textShader = {};
+  ParamBlockType textPBType = {};
+  ParamBlock textPB = {};
 };
 
 // Resolution dependent
@@ -131,6 +137,7 @@ struct Viz {
   RasterShader tonemapShader = {};
 
   Materials materials = {};
+  FontAtlas fontAtlas = {};
 
   std::array<FrameState, NUM_FRAMES_IN_FLIGHT> frames = {};
   i32 curFrameIdx = 0;
