@@ -50,13 +50,13 @@ V2F vertMain(uint idx: SV_VertexID)
   
   // Arc parameters - 30% of circle = ~108 degrees = 1.88 radians
   // But we want just the bottom portion visible
-  float arcAngle = 2.5;
+  float arcAngle = 2.4;
   float startAngle = -arcAngle / 2;
   float angle = startAngle + t * arcAngle;
   
   // Inner and outer radius for thickness
-  float innerRadius = 0.45;
-  float outerRadius = 0.55;
+  float innerRadius = 0.4;
+  float outerRadius = 0.5;
   float radius = (localVert.y == 1) ? outerRadius : innerRadius;
   
   // Calculate position on the arc (in horizontal plane)

@@ -563,6 +563,55 @@ void Viz::resize(SimRT &rt, Surface new_surface)
   render(rt);
 }
 
+GridPos Viz::screenToGridPos(Vector2 screenPos)
+{
+  // Convert screen coordinates (0,0 top-left) to NDC (-1,-1 to 1,1)
+  float ndcX = (2.0f * screenPos.x / windowWidth) - 1.0f;
+  float ndcY = 1.0f - (2.0f * screenPos.y / windowHeight);
+  
+  // Calculate aspect ratio and FOV scale
+  float aspect_ratio = (float)windowWidth / (float)windowHeight;
+  float fov_scale = 1.f / tanf(toRadians(cam.fov * 0.5f));
+  
+  // Unproject from NDC to view space direction
+  Vector3 rayDirView = {
+    ndcX * aspect_ratio / fov_scale,
+    ndcY / fov_scale,
+    1.0f
+  };
+  
+  // Transform ray direction to world space
+  Vector3 rayDirWorld = normalize(
+    cam.right * rayDirView.x +
+    cam.up * rayDirView.y +
+    cam.fwd
+  );
+  
+  // Ray-plane intersection with z=0 grid plane
+  if (fabsf(rayDirWorld.z) < 0.001f) {
+    return { -1, -1 }; // Ray is parallel to the grid plane
+  }
+  
+  float t = -cam.position.z / rayDirWorld.z;
+  
+  if (t < 0) {
+    return { -1, -1 }; // Ray doesn't intersect the grid plane
+  }
+  
+  Vector3 intersection = cam.position + rayDirWorld * t;
+  
+  // Convert world coordinates to grid coordinates
+  i32 gridX = (i32)floorf(intersection.x + 0.5f);
+  i32 gridY = (i32)floorf(intersection.y + 0.5f);
+  
+  // Check bounds
+  if (gridX < 0 || gridX >= GRID_SIZE || gridY < 0 || gridY >= GRID_SIZE) {
+    return { -1, -1 };
+  }
+  
+  return { gridX, gridY };
+}
+
 static UIControl::Flag updateCamera(OrbitCam &cam, UserInput &input,
                                     UserInputEvents &events, float delta_t)
 {
@@ -632,8 +681,52 @@ static UIControl::Flag updateCamera(OrbitCam &cam, UserInput &input,
 
 void Viz::buildImguiWidgets()
 {
+  World *world = sim->activeWorlds[curVizActiveWorld];
+  
+  // Show unit inspector window if a unit is selected
+  if (selectedUnit) {
+    UnitPtr unit = world->units.get(selectedUnit);
+    if (unit) {
+      ImGui::Begin("Unit Inspector");
+      
+      ImGui::Text("Grid Position: (%d, %d)", unit->pos.x, unit->pos.y);
+      ImGui::Separator();
+      
+      // Team color indicator
+      const char* teamName = (unit->team == 0) ? "Red Team" : "Blue Team";
+      if (unit->team == 0) {
+        ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "%s", teamName);
+      } else {
+        ImGui::TextColored(ImVec4(0.2f, 0.2f, 1.0f, 1.0f), "%s", teamName);
+      }
+      
+      ImGui::Separator();
+      
+      // Health bar
+      ImGui::Text("Health: %d / %d", unit->hp, DEFAULT_HP);
+      float healthPercent = (float)unit->hp / (float)DEFAULT_HP;
+      ImGui::ProgressBar(healthPercent, ImVec2(0.0f, 0.0f));
+      
+      // Speed
+      ImGui::Text("Speed: %d", unit->speed);
+      
+      // Attack type
+      const char* attackTypeStr = ATTACK_TYPE_NAMES[static_cast<u32>(unit->attackType)];
+      ImGui::Text("Attack Type: %s", attackTypeStr);
+      
+      ImGui::End();
+    } else {
+      // Unit no longer exists or is dead, close the inspector
+      selectedUnit = UnitID::none();
+    }
+  }
+  
+  // Debug window
   ImGui::Begin("Debug");
-  ImGui::Text("hi");
+  ImGui::Text("Click on a unit to inspect its stats");
+  if (selectedGridPos.x >= 0 && selectedGridPos.y >= 0) {
+    ImGui::Text("Selected cell: (%d, %d)", selectedGridPos.x, selectedGridPos.y);
+  }
   ImGui::End();
 }
 
@@ -643,6 +736,33 @@ UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
   UIControl ui_ctrl {};
 
   ui_ctrl.flags |= updateCamera(cam, input, events, delta_t);
+
+  // Handle unit selection on left click (when not camera dragging)
+  if (events.downEvent(InputID::MouseLeft) && 
+      !input.isDown(InputID::MouseRight) && 
+      !input.isDown(InputID::Shift)) {
+    Vector2 mousePos = input.mousePosition();
+    GridPos clickedPos = screenToGridPos(mousePos);
+    
+    if (clickedPos.x >= 0 && clickedPos.y >= 0) {
+      World *world = sim->activeWorlds[curVizActiveWorld];
+      selectedGridPos = clickedPos;
+      
+      // Check if there's a unit at this position
+      Cell& cell = world->grid[clickedPos.y][clickedPos.x];
+      if (cell.actorID != GenericID::none() && cell.actorID.type == (i32)ActorType::Unit) {
+        // Try to get the unit
+        selectedUnit = UnitID::fromGeneric(cell.actorID);
+        UnitPtr unit = world->units.get(selectedUnit);
+        if (!unit) {
+          selectedUnit = UnitID::none();
+        }
+      } else {
+        // No unit at this position
+        selectedUnit = UnitID::none();
+      }
+    }
+  }
 
   ImGuiSystem::UIControl imgui_ctrl = {};
   ImGuiSystem::newFrame(input, events, windowWidth, windowHeight,
@@ -784,7 +904,7 @@ void Viz::renderUnits(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
       Vector3(0.2f, 0.2f, 1.0f);   // Blue team
     
     enc.drawData(HealthBarPerDraw {
-      .worldPos = { float(unit->pos.x), float(unit->pos.y), 0.1f },
+      .worldPos = { float(unit->pos.x), float(unit->pos.y), 0.01f },
       .healthPercent = healthPercent,
       .teamColor = teamColor,
     });
@@ -796,6 +916,7 @@ void Viz::renderUnits(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
 
 void Viz::renderGeo(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
 {
+  (void)rt;
   enc.setParamBlock(0, frame.input.globalDataPB);
 
   enc.setShader(materials.boardShader);

@@ -11,6 +11,12 @@
 namespace bot {
 using namespace gas;
 
+// Attack type string lookup table
+constexpr const char* ATTACK_TYPE_NAMES[] = {
+  "Melee",
+  "Ranged (Gap One)"
+};
+
 struct UIControl {
   enum class Flag : u32 {
     None         = 0,
@@ -138,6 +144,10 @@ struct Viz {
   Scene scene = {};
 
   UnitAction playerAction = {};
+  
+  // Unit selection state
+  GridPos selectedGridPos = { -1, -1 };
+  UnitID selectedUnit = UnitID::none();
 
   void init(RTStateHandle rt_state_hdl, Sim *sim_state,
             GPULib *gpu_lib, GPUDevice *gpu_in, Surface surface);
@@ -180,6 +190,8 @@ private:
 
   inline void renderUnits(
     SimRT &rt, FrameState &frame, RasterPassEncoder &enc);
+  
+  inline GridPos screenToGridPos(Vector2 screenPos);
 };
 
 inline UIControl::Flag & operator|=(UIControl::Flag &a, UIControl::Flag b);
