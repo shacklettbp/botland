@@ -12,7 +12,7 @@ namespace bot {
 
 constexpr inline i32 GRID_SIZE = 8;
 constexpr inline i32 TEAM_SIZE = 4;
-constexpr inline i32 DEFAULT_HP = 10;
+constexpr inline i32 DEFAULT_HP = 5;
 constexpr inline i32 DEFAULT_SPEED = 10;
 
 struct GridPos {

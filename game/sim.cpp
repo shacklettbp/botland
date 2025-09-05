@@ -59,6 +59,7 @@ World * createWorld(
       u->hp = DEFAULT_HP;
       u->speed = DEFAULT_SPEED;
       u->team = 0;
+      u->attackType = AttackType::Melee;
     }
   }
 
@@ -78,6 +79,7 @@ World * createWorld(
       u->hp = DEFAULT_HP;
       u->speed = DEFAULT_SPEED;
       u->team = 1;
+      u->attackType = AttackType::Melee;
     }
   }
 
@@ -130,143 +132,98 @@ World * createWorld(
   return world;
 }
 
-#if 0
-void curUnitMove(SimRT &rt, World *world, MoveAction action)
+void stepWorld(SimRT &rt, World *world, UnitAction action)
 {
   UnitID cur_unit_id = world->turnCur;
+  UnitPtr unit = world->units.get(cur_unit_id);
+  assert(unit && unit->hp > 0);
 
-  UnitRef unit = world->units.get(cur_unit_id);
-  assert(unit && *unit.hp > 0);
-  
-  // Calculate target position
-  GridPos currentPos = *unit.pos;
-  GridPos targetPos = {
-    currentPos.x + action.deltaX,
-    currentPos.y + action.deltaY,
-  };
-  
-  // Check if target position is within grid bounds
-  if (targetPos.x >= 0 && targetPos.x < GRID_SIZE &&
-      targetPos.y >= 0 && targetPos.y < GRID_SIZE) {
-    
-    // BFS to verify a path exists through empty/teammate cells only,
-    // and that the destination cell is empty.
-    int dist[GRID_SIZE][GRID_SIZE];
-    for (int yy = 0; yy < GRID_SIZE; ++yy) {
-      for (int xx = 0; xx < GRID_SIZE; ++xx) {
-        dist[yy][xx] = -1;
-      }
-    }
-    
-    // Destination must be empty to end move
-    bool destinationEmpty = (world->grid[targetPos.y][targetPos.x].actorID == GenericID::none());
-    
-    int qx[GRID_SIZE * GRID_SIZE];
-    int qy[GRID_SIZE * GRID_SIZE];
-    int qh = 0, qt = 0;
-    
-    qx[qt] = currentPos.x; qy[qt] = currentPos.y; qt++;
-    dist[currentPos.y][currentPos.x] = 0;
-    
-    auto isEnemyAt = [&](int x, int y) {
-      GenericID aid = world->grid[y][x].actorID;
-      if (aid == GenericID::none()) return false;
-      UnitID oid = UnitID::fromGeneric(aid);
-      UnitRef o = world->units.get(oid);
-      return (o && *o.team != *unit.team);
-    };
-    
-    auto isPassable = [&](int x, int y) {
-      if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return false;
-      return !isEnemyAt(x, y);
-    };
-    
-    while (qh < qt) {
-      int cx = qx[qh];
-      int cy = qy[qh];
-      qh++;
-      
-      // Early exit if we've already exceeded speed
-      if (dist[cy][cx] >= *unit.speed) continue;
-      
-      const int dx[4] = { 1, -1, 0, 0 };
-      const int dy[4] = { 0, 0, 1, -1 };
-      
-      for (int dir = 0; dir < 4; ++dir) {
-        int nx = cx + dx[dir];
-        int ny = cy + dy[dir];
-        if (!isPassable(nx, ny)) continue;
-        if (dist[ny][nx] != -1) continue;
-        dist[ny][nx] = dist[cy][cx] + 1;
-        qx[qt] = nx; qy[qt] = ny; qt++;
-      }
-    }
-    
-    bool reachable = destinationEmpty && dist[targetPos.y][targetPos.x] != -1 &&
-                     dist[targetPos.y][targetPos.x] <= *unit.speed;
-    
-    if (reachable) {
-      if (targetPos.x != currentPos.x || targetPos.y != currentPos.y) {
-        world->grid[currentPos.y][currentPos.x].actorID = GenericID::none();
-        *unit.pos = targetPos;
-        world->grid[targetPos.y][targetPos.x].actorID = cur_unit_id.toGeneric();
-      }
-    }
-    // If not reachable, unit stays in place
-  }
-  // If target position is out of bounds, unit stays in place
-
-}
-
-void curUnitAttack(SimRT &rt, World *world, AttackAction action)
-{
-  UnitID cur_unit_id = world->turnCur;
-  UnitRef unit = world->units.get(cur_unit_id);
-  assert(unit && *unit.hp > 0);
-
-  // Delta-based attack: (0,0) is noop
-  if (action.deltaX == 0 && action.deltaY == 0) {
-    return;
+  // Calculate movement direction offsets
+  i32 dx = 0, dy = 0;
+  switch (action.move) {
+    case MoveAction::Wait:
+      // No movement
+      break;
+    case MoveAction::Left:
+      dx = -1;
+      break;
+    case MoveAction::Right:
+      dx = 1;
+      break;
+    case MoveAction::Up:
+      dy = -1;
+      break;
+    case MoveAction::Down:
+      dy = 1;
+      break;
+    default:
+      break;
   }
 
-  // Target position from delta
-  i32 tx = unit.pos->x + action.deltaX;
-  i32 ty = unit.pos->y + action.deltaY;
+  // Only process if there's an actual movement
+  if (dx != 0 || dy != 0) {
+    i32 cur_x = unit->pos.x;
+    i32 cur_y = unit->pos.y;
+    
+    // Determine attack and movement targets based on attack type
+    i32 attack_x = cur_x, attack_y = cur_y;
+    i32 move_x = cur_x + dx, move_y = cur_y + dy;
+    
+    if (unit->attackType == AttackType::Melee) {
+      // Melee attacks the adjacent tile
+      attack_x = move_x;
+      attack_y = move_y;
+    } else if (unit->attackType == AttackType::RangedGapOne) {
+      // RangedGapOne skips adjacent tile and attacks two tiles away
+      attack_x = cur_x + 2 * dx;
+      attack_y = cur_y + 2 * dy;
+    }
+    
+    // Check if we can attack an enemy at the attack position
+    bool attacked = false;
+    if (attack_x >= 0 && attack_x < GRID_SIZE && attack_y >= 0 && attack_y < GRID_SIZE) {
+      GenericID target_gen_id = world->grid[attack_y][attack_x].actorID;
+      if (target_gen_id && target_gen_id.type == (i32)ActorType::Unit) {
+        UnitID target_id = UnitID::fromGeneric(target_gen_id);
+        UnitPtr target_unit = world->units.get(target_id);
+        assert(target_unit);
+        if (target_unit->team != unit->team) {
+          // Attack the enemy unit
+          target_unit->hp -= 1;
+          attacked = true;
+          
+          if (target_unit->hp <= 0) {
+            world->units.destroy(target_id);
 
-  // Check bounds
-  if (tx >= 0 && tx < GRID_SIZE && ty >= 0 && ty < GRID_SIZE) {
-    GenericID target_gen_id = world->grid[ty][tx].actorID;
-    if (target_gen_id) {
-      UnitID target_id = UnitID::fromGeneric(target_gen_id);
-      UnitRef target_unit = world->units.get(target_id);
-      if (target_unit && *target_unit.hp > 0 && *target_unit.team != *unit.team) {
-        // Attack: for now, just decrement HP by 1
-        *target_unit.hp -= 1;
-        if (*target_unit.hp <= 0) {
-          // Remove from grid and turn order if dead
-          world->grid[ty][tx].actorID = GenericID::none();
-          unlinkUnitFromTurnOrder(rt, world, target_id);
+            // Remove dead unit from grid and turn order
+            world->grid[attack_y][attack_x].actorID = GenericID::none();
+            unlinkUnitFromTurnOrder(rt, world, target_id);
+            world->numAliveUnits--;
+          }
+        }
+      }
+    }
+    
+    // If we didn't attack, try to move
+    if (!attacked) {
+      if (move_x >= 0 && move_x < GRID_SIZE && move_y >= 0 && move_y < GRID_SIZE) {
+        GenericID move_target_id = world->grid[move_y][move_x].actorID;
+        // Only move if the target tile is empty
+        if (!move_target_id) {
+          // Clear current position
+          world->grid[cur_y][cur_x].actorID = GenericID::none();
+          // Move to new position
+          world->grid[move_y][move_x].actorID = unit->id.toGeneric();
+          unit->pos.x = move_x;
+          unit->pos.y = move_y;
         }
       }
     }
   }
-}
-#endif
-
-void stepWorld(SimRT &rt, World *world, UnitAction action)
-{
 
   {
     // Advance to next alive unit
-    if (world->turnCur) {
-      UnitPtr cur = world->units.get(world->turnCur);
-      UnitID next_id = cur->turnListItem.next ? cur->turnListItem.next : world->turnHead;
-
-      while (next_id) {
-        UnitPtr next = world->units.get(next_id);
-        next_id = next->turnListItem.next ? next->turnListItem.next : world->turnHead;
-      }
-    }
+    world->turnCur = unit->turnListItem.next ? unit->turnListItem.next : world->turnHead;
 
     rt.releaseArena(world->tmpArena);
   }
