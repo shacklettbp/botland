@@ -47,4 +47,11 @@ PUB struct BoardDrawData {
   PUB uint2 gridSize;
 };
 
+PUB struct HealthBarPerDraw {
+  PUB float3 worldPos;
+  PUB float healthPercent;
+  PUB float3 teamColor;
+  float pad0 = 0;
+};
+
 #undef PUB

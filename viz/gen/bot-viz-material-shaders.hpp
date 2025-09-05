@@ -6,6 +6,7 @@ namespace bot {
 enum class MaterialShaderID : u32 {
   Board = 0,
   Units = 1,
+  HealthBar = 2,
 };
 
 struct VizMaterialShaders : gas::CompiledShadersBlob {

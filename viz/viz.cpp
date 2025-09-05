@@ -322,12 +322,36 @@ void Viz::initMaterials()
         .depthCompare = DepthCompare::GreaterOrEqual,
       },
     });
+
+    materials.healthBarShader = gpu->createRasterShader({
+      .byteCode = shaders.getByteCode(MaterialShaderID::HealthBar),
+      .vertexEntry = "vertMain",
+      .fragmentEntry = "fragMain",
+      .rasterPass = hdrPassInterface,
+      .paramBlockTypes = { globalDataPBType },
+      .numPerDrawBytes = sizeof(HealthBarPerDraw),
+      .rasterConfig = {
+        .depthCompare = DepthCompare::GreaterOrEqual,
+        .cullMode = CullMode::None,
+        .blending = {
+          {
+            .colorOp = BlendOperation::Add,
+            .srcColorFactor = BlendFactor::SrcAlpha,
+            .dstColorFactor = BlendFactor::OneMinusSrcAlpha,
+            .alphaOp = BlendOperation::Add,
+            .srcAlphaFactor = BlendFactor::One,
+            .dstAlphaFactor = BlendFactor::OneMinusSrcAlpha,
+          }
+        },
+      },
+    });
   }
 }
 
 void Viz::cleanupMaterials()
 {
   {
+    gpu->destroyRasterShader(materials.healthBarShader);
     gpu->destroyRasterShader(materials.unitsShader);
   }
 
@@ -715,23 +739,14 @@ static NonUniformScaleObjectTransform computeNonUniformScaleTxfm(
   return out;
 }
 
-void Viz::renderGeo(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
+void Viz::renderUnits(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
 {
+  (void)rt;
+
   World *world = sim->activeWorlds[curVizActiveWorld];
 
+  // First pass: render all unit meshes
   enc.setParamBlock(0, frame.input.globalDataPB);
-
-  {
-    enc.setShader(materials.boardShader);
-    enc.setParamBlock(1, materials.boardPB);
-
-    enc.drawData(BoardDrawData {
-      .gridSize = { GRID_SIZE, GRID_SIZE },
-    });
-
-    enc.draw(0, 12);
-  }
-
   enc.setShader(materials.unitsShader);
   enc.setVertexBuffer(0, scene.geoBuffer);
   enc.setIndexBufferU32(scene.geoBuffer);
@@ -741,8 +756,8 @@ void Viz::renderGeo(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
     
     enc.drawData(UnitsPerDraw {
       .txfm = computeNonUniformScaleTxfm(
-        { float(unit->pos.x), float(unit->pos.y), 0 },
-        Quat::id(), { 0.35f, 0.35f, 0.5f }),
+        { float(unit->pos.x), float(unit->pos.y), 0.5f },
+        Quat::id(), { 0.30f, 0.30f, 0.5f }),
       .color = (unit->team == 0) ?
         Vector4(1, 0, 0, 1) :
         Vector4(0, 0, 1, 1),
@@ -756,6 +771,41 @@ void Viz::renderGeo(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
                       mesh.numTriangles);
     }
   }
+
+  // Second pass: render health bars
+  enc.setShader(materials.healthBarShader);
+  enc.setParamBlock(0, frame.input.globalDataPB);
+  
+  for (auto unit : world->units) {
+    float healthPercent = float(unit->hp) / float(DEFAULT_HP);
+    
+    Vector3 teamColor = (unit->team == 0) ?
+      Vector3(1.0f, 0.2f, 0.2f) :  // Red team
+      Vector3(0.2f, 0.2f, 1.0f);   // Blue team
+    
+    enc.drawData(HealthBarPerDraw {
+      .worldPos = { float(unit->pos.x), float(unit->pos.y), 0.1f },
+      .healthPercent = healthPercent,
+      .teamColor = teamColor,
+    });
+    
+    // Draw triangles for the arc (16 segments * 2 triangles = 32 triangles)
+    enc.draw(0, 32);
+  }
+}
+
+void Viz::renderGeo(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
+{
+  enc.setParamBlock(0, frame.input.globalDataPB);
+
+  enc.setShader(materials.boardShader);
+  enc.setParamBlock(1, materials.boardPB);
+
+  enc.drawData(BoardDrawData {
+    .gridSize = { GRID_SIZE, GRID_SIZE },
+  });
+
+  enc.draw(0, 12);
 }
 
 void Viz::render(SimRT &rt)
@@ -788,6 +838,7 @@ void Viz::render(SimRT &rt)
   {
     RasterPassEncoder enc = frameEnc.beginRasterPass(frame.render.hdrPass);
     renderGeo(rt, frame, enc);
+    renderUnits(rt, frame, enc);
     frameEnc.endRasterPass(enc);
   }
 

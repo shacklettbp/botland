@@ -36,5 +36,6 @@ using shader::ViewData;
 using shader::NonUniformScaleObjectTransform;
 using shader::UnitsPerDraw;
 using shader::BoardDrawData;
+using shader::HealthBarPerDraw;
 
 }

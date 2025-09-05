@@ -31,7 +31,7 @@ V2F vertMain(uint idx: SV_VertexID)
   pos_w.xy *= grid_size / 2;
   pos_w.xy += grid_size / 2 - 0.5f;
   pos_w.z *= 0.5f;
-  pos_w.z -= 1.f;
+  pos_w.z -= 0.5f;
 
   uv *= grid_size / 2;
 

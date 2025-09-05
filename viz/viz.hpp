@@ -72,6 +72,9 @@ struct Materials {
 
   // Units
   RasterShader unitsShader = {};
+  
+  // Health bars
+  RasterShader healthBarShader = {};
 };
 
 // Resolution dependent
@@ -173,6 +176,9 @@ private:
   inline void buildImguiWidgets();
 
   inline void renderGeo(
+    SimRT &rt, FrameState &frame, RasterPassEncoder &enc);
+
+  inline void renderUnits(
     SimRT &rt, FrameState &frame, RasterPassEncoder &enc);
 };
 
