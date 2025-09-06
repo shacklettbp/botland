@@ -1,5 +1,7 @@
 #include "font.hpp"
 
+#include <rt/os.hpp>
+
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb_truetype.h>
 #include <cstring>
@@ -7,61 +9,28 @@
 namespace bot {
 using namespace gas;
 
-// Default font data (using a simple bitmap font or embedded font)
-// For now, we'll load from a system font file
-static const char* getDefaultFontPath() {
-  #ifdef __APPLE__
-    return "/System/Library/Fonts/Helvetica.ttc";
-  #elif _WIN32
-    return "C:/Windows/Fonts/arial.ttf";
-  #else
-    return "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf";
-  #endif
-}
+void FontAtlas::init(Runtime &rt, GPUDevice* gpu, GPUQueue queue, float requestedFontSize)
+{
+  ArenaRegion tmp_region = rt.beginTmpRegion();
+  BOT_DEFER(rt.endTmpRegion(tmp_region));
 
-void FontAtlas::init(MemArena& arena, float requestedFontSize) {
   fontSize = requestedFontSize;
   
-  // Allocate bitmap
-  // Use static allocation for simplicity
-  static u8 staticBitmap[ATLAS_WIDTH * ATLAS_HEIGHT];
-  bitmap = staticBitmap;
-  memset(bitmap, 0, ATLAS_WIDTH * ATLAS_HEIGHT);
+  const char *font_path = BOT_DATA_DIR "imgui_font.ttf";
   
-  // Load font file
-  FILE* fontFile = fopen(getDefaultFontPath(), "rb");
-  if (!fontFile) {
-    // Fall back to a very simple font if we can't load a system font
-    // For now, just fill with white so text is visible
-    memset(bitmap, 255, ATLAS_WIDTH * ATLAS_HEIGHT);
-    lineHeight = fontSize;
-    for (u32 i = 0; i < NUM_CHARS; i++) {
-      charInfo[i] = {
-        .x0 = 0, .y0 = 0,
-        .x1 = 1, .y1 = 1,
-        .xoff = 0, .yoff = 0,
-        .xadvance = fontSize * 0.6f
-      };
-    }
-    return;
+  u64 fileSize = 0;
+  u8 *font_buffer = (u8 *)readFile(rt, rt.tmpArena(), font_path, &fileSize);
+  
+  if (!font_buffer) {
+    FATAL("Failed to read font file at %s", font_path);
   }
-  
-  // Get font file size
-  fseek(fontFile, 0, SEEK_END);
-  long fileSize = ftell(fontFile);
-  fseek(fontFile, 0, SEEK_SET);
-  
-  // Read font data
-  u8* fontBuffer = new u8[fileSize];
-  fread(fontBuffer, 1, fileSize, fontFile);
-  fclose(fontFile);
-  
-  // Initialize font
+
   stbtt_fontinfo font;
-  if (!stbtt_InitFont(&font, fontBuffer, 0)) {
+  int faceOffset = stbtt_GetFontOffsetForIndex(font_buffer, 0);
+  if (faceOffset < 0) faceOffset = 0;
+  if (!stbtt_InitFont(&font, font_buffer, faceOffset)) {
     // Failed to init font, fall back to white square
-    memset(bitmap, 255, ATLAS_WIDTH * ATLAS_HEIGHT);
-    lineHeight = fontSize;
+    FATAL("Failed to initialize UI font");
     return;
   }
   
@@ -77,6 +46,7 @@ void FontAtlas::init(MemArena& arena, float requestedFontSize) {
   int x = 0, y = 0;
   int rowHeight = 0;
   
+  u8 *bitmap = rt.arenaAllocN<u8>(rt.tmpArena(), ATLAS_WIDTH * ATLAS_HEIGHT);
   for (u32 i = 0; i < NUM_CHARS; i++) {
     int c = FIRST_CHAR + i;
     
@@ -129,36 +99,17 @@ void FontAtlas::init(MemArena& arena, float requestedFontSize) {
     }
   }
   
-  delete[] fontBuffer;
-}
-
-void FontAtlas::createGPUTexture(GPUDevice* gpu, GPUQueue queue) {
-  // Convert single-channel bitmap to RGBA
-  u32 dataSize = ATLAS_WIDTH * ATLAS_HEIGHT * 4;
-  u8* rgbaData = new u8[dataSize];
-  
-  for (u32 i = 0; i < ATLAS_WIDTH * ATLAS_HEIGHT; i++) {
-    rgbaData[i * 4 + 0] = 255;  // R
-    rgbaData[i * 4 + 1] = 255;  // G
-    rgbaData[i * 4 + 2] = 255;  // B
-    rgbaData[i * 4 + 3] = bitmap[i];  // A
-  }
-  
   texture = gpu->createTexture({
-    .format = TextureFormat::RGBA8_UNorm,
+    .format = TextureFormat::R8_UNorm,
     .width = ATLAS_WIDTH,
     .height = ATLAS_HEIGHT,
-    .initData = { .ptr = rgbaData }
+    .initData = { .ptr = bitmap }
   }, queue);
-  
-  delete[] rgbaData;
 }
 
 void FontAtlas::destroy(GPUDevice* gpu) {
-  if (!texture.null()) {
-    gpu->destroyTexture(texture);
-    texture = {};
-  }
+  gpu->destroyTexture(texture);
+  *this = {};
 }
 
 } // namespace bot

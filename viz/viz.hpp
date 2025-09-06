@@ -178,7 +178,7 @@ private:
   inline void initPassInterfaces();
   inline void cleanupPassInterfaces();
 
-  inline void initMaterials();
+  inline void initMaterials(Runtime &rt);
   inline void cleanupMaterials();
 
   inline void initFrameInputs();

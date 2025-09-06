@@ -152,6 +152,7 @@ struct BufferInit {
 // Texture Setup
 enum class TextureFormat : u16 {
   None,
+  R8_UNorm,
   RGBA8_UNorm,
   RGBA8_SRGB,
   BGRA8_UNorm,

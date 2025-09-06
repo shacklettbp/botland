@@ -116,6 +116,7 @@ inline wgpu::TextureFormat convertTextureFormat(TextureFormat in)
 
   switch (in) {
     case None: return O::Undefined;
+    case R8_UNorm: return O::R8Unorm;
     case RGBA8_UNorm: return O::RGBA8Unorm;
     case RGBA8_SRGB: return O::RGBA8UnormSrgb;
     case BGRA8_UNorm: return O::BGRA8Unorm;
@@ -133,6 +134,7 @@ inline TextureFormat convertWebGPUTextureFormat(wgpu::TextureFormat in)
   using enum TextureFormat;
 
   switch (in) {
+    case In::R8Unorm: return R8_UNorm;
     case In::RGBA8Unorm: return RGBA8_UNorm;
     case In::RGBA8UnormSrgb: return RGBA8_SRGB;
     case In::BGRA8Unorm: return BGRA8_UNorm;

@@ -244,7 +244,7 @@ void Viz::cleanupPassInterfaces()
   gpu->destroyRasterPassInterface(hdrPassInterface);
 }
 
-void Viz::initMaterials()
+void Viz::initMaterials(Runtime &rt)
 {
   using enum VertexFormat;
 
@@ -350,9 +350,7 @@ void Viz::initMaterials()
   
   {
     // Initialize font atlas
-    MemArena dummyArena = {}; // Not used anymore, font uses static allocation
-    fontAtlas.init(dummyArena, 24.0f); // 24px font size
-    fontAtlas.createGPUTexture(gpu, mainQueue);
+    fontAtlas.init(rt, gpu, mainQueue, 24.0f); // 24px font size
     gpu->waitUntilWorkFinished(mainQueue);
     
     // Create text rendering resources
@@ -539,6 +537,8 @@ void Viz::cleanupGlobalShaders()
 void Viz::init(RTStateHandle rt_state_hdl, Sim *sim_state,
                GPULib *gpu_lib, GPUDevice *gpu_in, Surface surface)
 {
+  Runtime rt(rt_state_hdl, 0);
+
   rtStateHdl = rt_state_hdl;
   sim = sim_state;
 
@@ -562,7 +562,7 @@ void Viz::init(RTStateHandle rt_state_hdl, Sim *sim_state,
 
   loadGlobalShaders();
 
-  initMaterials();
+  initMaterials(rt);
 
   initFrameInputs();
   initRenderFrames();

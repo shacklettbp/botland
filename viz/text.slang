@@ -86,7 +86,7 @@ float4 fragMain(V2F v2f) : SV_Target0
   float4 texColor = nameMat.fontTexture.Sample(nameMat.fontSampler, v2f.uv);
   
   // Use alpha channel for text, multiply by color
-  float alpha = texColor.a;
+  float alpha = texColor.r;
   
   // Apply text color
   float3 finalColor = perDraw.color.rgb;

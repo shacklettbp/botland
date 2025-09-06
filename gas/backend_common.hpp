@@ -17,6 +17,7 @@ inline u32 bytesPerTexelForFormat(TextureFormat fmt)
 
   switch (fmt) {
     case None: return 0;
+    case R8_UNorm: return 1;
     case RGBA8_UNorm:
     case RGBA8_SRGB:
     case BGRA8_UNorm:

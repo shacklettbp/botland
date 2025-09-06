@@ -19,16 +19,14 @@ struct FontAtlas {
   static constexpr u32 LAST_CHAR = 126;   // Tilde character
   static constexpr u32 NUM_CHARS = LAST_CHAR - FIRST_CHAR + 1;
   
-  u8* bitmap = nullptr;
-  CharInfo charInfo[NUM_CHARS];
-  float fontSize;
-  float lineHeight;
+  CharInfo charInfo[NUM_CHARS] = {};
+  float fontSize = 0;
+  float lineHeight = 0;
   
-  Texture texture;
+  Texture texture = {};
   
-  void init(MemArena& arena, float fontSize);
-  void createGPUTexture(GPUDevice* gpu, GPUQueue queue);
-  void destroy(GPUDevice* gpu);
+  void init(Runtime &rt, GPUDevice *gpu, GPUQueue queue, float fontSize);
+  void destroy(GPUDevice *gpu);
   
   CharInfo getCharInfo(char c) const {
     if ((u32)c < FIRST_CHAR || (u32)c > LAST_CHAR) {
