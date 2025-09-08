@@ -975,7 +975,7 @@ void Viz::renderUnits(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
   for (auto unit : world->units) {
     // Prepare text data
     shader::TextPerDraw textData = {};
-    textData.worldPos = { float(unit->pos.x), float(unit->pos.y), 0.5f };
+    textData.worldPos = { float(unit->pos.x), float(unit->pos.y), 1.2f };
     textData.scale = 0.4f; // Adjust scale as needed
     textData.color = (unit->team == 0) ?
       Vector4(1.0f, 0.2f, 0.2f, 1.0f) :  // Red team
@@ -984,7 +984,7 @@ void Viz::renderUnits(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
     // Convert unit name to UV coordinates
     const char* name = unit->name.data;
     u32 nameLen = strlen(name);
-    textData.numChars = (nameLen > 4) ? 4 : nameLen; // Max 4 chars for now
+    textData.numChars = std::min(nameLen, 16_u32);
     
     for (u32 i = 0; i < textData.numChars; i++) {
       CharInfo charInfo = fontAtlas.getCharInfo(name[i]);
@@ -994,7 +994,7 @@ void Viz::renderUnits(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
     enc.drawData(textData);
     
     // Draw quads for text (6 vertices per character)
-    enc.draw(0, textData.numChars * 6);
+    enc.draw(0, textData.numChars * 2);
   }
 }
 

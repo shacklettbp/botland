@@ -26,15 +26,6 @@ V2F vertMain(uint idx: SV_VertexID)
   uint charIdx = idx / 6;
   uint localIdx = idx % 6;
   
-  // Bail out if we're past the number of characters
-  if (charIdx >= perDraw.numChars) {
-    V2F out;
-    out.pos = float4(0, 0, 0, 0);
-    out.uv = float2(0, 0);
-    out.charIndex = 0;
-    return out;
-  }
-  
   // Triangle strip pattern for a quad:
   float2 quadPattern[6] = {
     float2(0, 0), float2(1, 0), float2(1, 1),
@@ -47,9 +38,6 @@ V2F vertMain(uint idx: SV_VertexID)
   float3x4 camTxfm = global.view.camTxfm;
   float3 camRight = camTxfm[0].xyz;
   float3 camUp = camTxfm[1].xyz;
-  float3 camPos = camTxfm[0].w * camTxfm[0].xyz + 
-                  camTxfm[1].w * camTxfm[1].xyz + 
-                  camTxfm[2].w * camTxfm[2].xyz;
   
   // Calculate character position offset
   float charWidth = perDraw.scale * 0.5;  // Approximate character width
@@ -58,7 +46,6 @@ V2F vertMain(uint idx: SV_VertexID)
   
   // Position in world space (above unit)
   float3 worldPos = perDraw.worldPos;
-  worldPos.z += 0.7;  // Offset above unit
   
   // Apply billboard transformation
   float2 vertPos = (localVert - float2(0.5, 0.5)) * perDraw.scale;

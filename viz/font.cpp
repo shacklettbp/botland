@@ -71,6 +71,10 @@ void FontAtlas::init(Runtime &rt, GPUDevice* gpu, GPUQueue queue, float requeste
         }
       }
       
+      // Get advance width
+      int advanceWidth, leftSideBearing;
+      stbtt_GetCodepointHMetrics(&font, c, &advanceWidth, &leftSideBearing);
+
       // Store character info
       charInfo[i] = {
         .x0 = (float)x / ATLAS_WIDTH,
@@ -79,13 +83,9 @@ void FontAtlas::init(Runtime &rt, GPUDevice* gpu, GPUQueue queue, float requeste
         .y1 = (float)(y + height) / ATLAS_HEIGHT,
         .xoff = (float)xoff,
         .yoff = (float)yoff + ascent * scale,
-        .xadvance = 0
+        .xadvance = (float)advanceWidth * scale
       };
       
-      // Get advance width
-      int advanceWidth, leftSideBearing;
-      stbtt_GetCodepointHMetrics(&font, c, &advanceWidth, &leftSideBearing);
-      charInfo[i].xadvance = advanceWidth * scale;
       
       // Update position for next character
       x += width + 1;
