@@ -13,8 +13,8 @@ struct CharInfo {
 };
 
 struct FontAtlas {
-  static constexpr u32 ATLAS_WIDTH = 512;
-  static constexpr u32 ATLAS_HEIGHT = 512;
+  static constexpr u32 ATLAS_WIDTH = 1024;
+  static constexpr u32 ATLAS_HEIGHT = 1024;
   static constexpr u32 FIRST_CHAR = 32;   // Space character
   static constexpr u32 LAST_CHAR = 126;   // Tilde character
   static constexpr u32 NUM_CHARS = LAST_CHAR - FIRST_CHAR + 1;

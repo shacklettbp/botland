@@ -354,7 +354,7 @@ void Viz::initMaterials(Runtime &rt)
     gpu->waitUntilWorkFinished(mainQueue);
     
     // Create text rendering resources
-    materials.textPBType = gpu->createParamBlockType({
+    materials.namePBType = gpu->createParamBlockType({
       .uuid = "text_materials_pb_type"_to_uuid,
       .textures = {
         { .shaderUsage = ShaderStage::Fragment },
@@ -364,19 +364,19 @@ void Viz::initMaterials(Runtime &rt)
       },
     });
     
-    materials.textPB = gpu->createParamBlock({
-      .typeID = materials.textPBType,
+    materials.namePB = gpu->createParamBlock({
+      .typeID = materials.namePBType,
       .textures = { fontAtlas.texture },
       .samplers = { bilinearRepeatSampler },
     });
     
-    materials.textShader = gpu->createRasterShader({
-      .byteCode = shaders.getByteCode(MaterialShaderID::Text),
+    materials.nameShader = gpu->createRasterShader({
+      .byteCode = shaders.getByteCode(MaterialShaderID::Name),
       .vertexEntry = "vertMain",
       .fragmentEntry = "fragMain",
       .rasterPass = hdrPassInterface,
-      .paramBlockTypes = { globalDataPBType, materials.textPBType },
-      .numPerDrawBytes = sizeof(shader::TextPerDraw),
+      .paramBlockTypes = { globalDataPBType, materials.namePBType },
+      .numPerDrawBytes = sizeof(shader::NamePerDraw),
       .rasterConfig = {
         .depthCompare = DepthCompare::GreaterOrEqual,
         .cullMode = CullMode::None,
@@ -398,9 +398,9 @@ void Viz::initMaterials(Runtime &rt)
 void Viz::cleanupMaterials()
 {
   {
-    gpu->destroyRasterShader(materials.textShader);
-    gpu->destroyParamBlock(materials.textPB);
-    gpu->destroyParamBlockType(materials.textPBType);
+    gpu->destroyRasterShader(materials.nameShader);
+    gpu->destroyParamBlock(materials.namePB);
+    gpu->destroyParamBlockType(materials.namePBType);
     fontAtlas.destroy(gpu);
     
     gpu->destroyRasterShader(materials.healthBarShader);
@@ -968,33 +968,33 @@ void Viz::renderUnits(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
   }
   
   // Third pass: render unit names
-  enc.setShader(materials.textShader);
+  enc.setShader(materials.nameShader);
   enc.setParamBlock(0, frame.input.globalDataPB);
-  enc.setParamBlock(1, materials.textPB);
+  enc.setParamBlock(1, materials.namePB);
   
   for (auto unit : world->units) {
     // Prepare text data
-    shader::TextPerDraw textData = {};
-    textData.worldPos = { float(unit->pos.x), float(unit->pos.y), 1.2f };
-    textData.scale = 0.4f; // Adjust scale as needed
-    textData.color = (unit->team == 0) ?
+    shader::NamePerDraw nameData = {};
+    nameData.worldPos = { float(unit->pos.x), float(unit->pos.y), 1.2f };
+    nameData.scale = 0.3f; // Adjust scale as needed
+    nameData.color = (unit->team == 0) ?
       Vector4(1.0f, 0.2f, 0.2f, 1.0f) :  // Red team
       Vector4(0.2f, 0.2f, 1.0f, 1.0f);   // Blue team
     
     // Convert unit name to UV coordinates
     const char* name = unit->name.data;
     u32 nameLen = strlen(name);
-    textData.numChars = std::min(nameLen, 16_u32);
+    nameData.numChars = std::min(nameLen, 16_u32);
     
-    for (u32 i = 0; i < textData.numChars; i++) {
+    for (u32 i = 0; i < nameData.numChars; i++) {
       CharInfo charInfo = fontAtlas.getCharInfo(name[i]);
-      textData.charUVs[i] = Vector4(charInfo.x0, charInfo.y0, charInfo.x1, charInfo.y1);
+      nameData.charUVs[i] = Vector4(charInfo.x0, charInfo.y0, charInfo.x1, charInfo.y1);
     }
     
-    enc.drawData(textData);
+    enc.drawData(nameData);
     
     // Draw quads for text (6 vertices per character)
-    enc.draw(0, textData.numChars * 2);
+    enc.draw(0, nameData.numChars * 2);
   }
 }
 

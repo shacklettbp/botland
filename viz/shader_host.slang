@@ -54,7 +54,7 @@ PUB struct HealthBarPerDraw {
   float pad0 = 0;
 };
 
-PUB struct TextPerDraw {
+PUB struct NamePerDraw {
   PUB float3 worldPos;
   PUB float scale;
   PUB float4 color;

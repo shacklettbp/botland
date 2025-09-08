@@ -6,7 +6,7 @@
 
 namespace bot {
 
-static inline void unlinkUnitFromTurnOrder(SimRT &rt, World *world, UnitID id)
+static inline void unlinkUnitFromTurnOrder(World *world, UnitID id)
 {
   UnitPtr u = world->units.get(id);
   TurnListLinkedList &turnListItem = u->turnListItem;
@@ -61,7 +61,7 @@ World * createWorld(
       u->speed = DEFAULT_SPEED;
       u->team = 0;
       u->attackType = AttackType::Melee;
-      snprintf(u->name.data, sizeof(u->name.data), "Unit %d", i);
+      snprintf(u->name.data, sizeof(u->name.data), "R %d", i);
     }
   }
 
@@ -82,7 +82,7 @@ World * createWorld(
       u->speed = DEFAULT_SPEED;
       u->team = 1;
       u->attackType = AttackType::Melee;
-      snprintf(u->name.data, sizeof(u->name.data), "Unit %d", i + TEAM_SIZE);
+      snprintf(u->name.data, sizeof(u->name.data), "B %d", i + TEAM_SIZE);
     }
   }
 
@@ -200,7 +200,7 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
 
             // Remove dead unit from grid and turn order
             world->grid[attack_y][attack_x].actorID = GenericID::none();
-            unlinkUnitFromTurnOrder(rt, world, target_id);
+            unlinkUnitFromTurnOrder(world, target_id);
             world->numAliveUnits--;
           }
         }

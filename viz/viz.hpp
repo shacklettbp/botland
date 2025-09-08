@@ -84,9 +84,9 @@ struct Materials {
   RasterShader healthBarShader = {};
   
   // Text rendering
-  RasterShader textShader = {};
-  ParamBlockType textPBType = {};
-  ParamBlock textPB = {};
+  RasterShader nameShader = {};
+  ParamBlockType namePBType = {};
+  ParamBlock namePB = {};
 };
 
 // Resolution dependent

@@ -10,7 +10,7 @@ ParameterBlock<GlobalPassData> global;
 
 ParameterBlock<NameMaterial> nameMat;
 
-ParameterBlock<TextPerDraw> perDraw;
+ParameterBlock<NamePerDraw> perDraw;
 
 struct V2F {
   float4 pos : SV_Position;
@@ -52,7 +52,7 @@ V2F vertMain(uint idx: SV_VertexID)
   vertPos.x += xOffset;
   
   worldPos += camRight * vertPos.x;
-  worldPos += camUp * vertPos.y;
+  worldPos -= camUp * vertPos.y;
   
   // Get UV coordinates for this character
   float4 charUV = perDraw.charUVs[charIdx];

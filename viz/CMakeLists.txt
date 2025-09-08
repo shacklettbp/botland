@@ -14,7 +14,7 @@ gas_add_shaders(TARGET bot-viz-material-shaders
     Board board.slang
     Units units.slang
     HealthBar healthbar.slang
-    Text text.slang
+    Name name.slang
 )
 
 add_library(bot-viz STATIC
