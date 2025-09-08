@@ -71,7 +71,7 @@ void Frontend::init(Backend *be)
     .errorsAreFatal = true,
   });
   window = ui_sys->createMainWindow(
-    "Botland", 1920*2, 1080*2, WindowInitFlags::Resizable);
+    "Botland", 2760, 1530, WindowInitFlags::Resizable);
 
   GPULib *gpu_lib = ui_sys->gpuLib();
   viz.init(backendRTStateHandle(be), backendSimState(be),
