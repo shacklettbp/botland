@@ -293,7 +293,7 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
               world->grid[cur_y][cur_x].effectID = effect->id;
               effect->pos.x = cur_x;
               effect->pos.y = cur_y;
-              effect->duration = 2;
+              effect->duration = 16;
               effect->type = LocationEffectType::Poison;
             } break;
             case AttackEffect::HealingBloom: {
