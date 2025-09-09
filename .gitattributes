@@ -1,1 +1,2 @@
 data/location_effect.obj filter=lfs diff=lfs merge=lfs -text
+data/wall.obj filter=lfs diff=lfs merge=lfs -text

@@ -198,6 +198,9 @@ private:
   inline void renderUnits(
     SimRT &rt, FrameState &frame, RasterPassEncoder &enc);
   
+  inline void renderWalls(
+    SimRT &rt, FrameState &frame, RasterPassEncoder &enc);
+  
   inline GridPos screenToGridPos(Vector2 screenPos);
 };
 

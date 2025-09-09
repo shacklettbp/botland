@@ -24,7 +24,7 @@ struct GridPos {
 enum class ActorType : u32 {
   None = 0,
   Unit,
-  Static,
+  Obstacle,
   LocationEffect,
 };
 
@@ -111,6 +111,22 @@ BOT_PERSISTENT_ID(LocationEffectID)
 BOT_PERSISTENT_STORE(LocationEffect, LocationEffectID, 64, LOCATION_EFFECT_FIELDS)
   
 #undef LOCATION_EFFECT_FIELDS
+  
+enum class ObstacleType : u32 {
+  None,
+  Wall,
+  NUM_OBSTACLE_TYPES,
+};
+
+BOT_PERSISTENT_ID(ObstacleID)
+  
+#define OBSTACLE_FIELDS(F) \
+  F(GridPos, pos) \
+  F(ObstacleType, type)
+  
+BOT_PERSISTENT_STORE(Obstacle, ObstacleID, 64, OBSTACLE_FIELDS)
+  
+#undef OBSTACLE_FIELDS
 
 struct MLInterface {
   i32 * episodeDoneEvents = nullptr;
@@ -142,6 +158,7 @@ struct World {
 
   UnitStore units = {};
   LocationEffectStore locationEffects = {};
+  ObstacleStore obstacles = {};
   
   TemporaryStore<KillUnitJob, 32> killUnitJobs = {};
   

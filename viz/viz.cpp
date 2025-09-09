@@ -58,6 +58,8 @@ static Scene loadModels(GPUDevice *gpu, GPUQueue tx_queue)
         (fs::path(BOT_DATA_DIR) / "smooth_sphere_render.obj").string());
     importer.importAsset(
         (fs::path(BOT_DATA_DIR) / "location_effect.obj").string());
+    importer.importAsset(
+        (fs::path(BOT_DATA_DIR) / "wall.obj").string());
   }
 
   ImportedAssets &assets = importer.getImportedAssets();
@@ -943,6 +945,12 @@ UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
       if (player_moved) {
         stepWorld(rt, world, playerAction);
       }
+      
+      selectedUnit = world->turnCur;
+      {
+        UnitPtr selected = world->units.get(selectedUnit);
+        selectedGridPos = { selected->pos.x, selected->pos.y };
+      }
     }
   }
 
@@ -1170,6 +1178,44 @@ void Viz::renderUnits(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
   }
 }
 
+void Viz::renderWalls(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
+{
+  (void)rt;
+  
+  World *world = sim->activeWorlds[curVizActiveWorld];
+
+  enc.setParamBlock(0, frame.input.globalDataPB);
+  enc.setShader(materials.genericLocationEffectShader); // FIXME
+  enc.setVertexBuffer(0, scene.geoBuffer);
+  enc.setIndexBufferU32(scene.geoBuffer);
+  
+  RenderObject obj = scene.renderObjects[3];
+  
+  for (auto obstacle : world->obstacles) {
+    Vector4 color = {};
+    switch (obstacle->type) {
+      case ObstacleType::Wall:
+        color = Vector4(0.3f, 0.1f, 0.3f, 1.0f);
+        break;
+      default:
+        break;
+    }
+
+    enc.drawData(shader::GenericLocationEffectPerDraw {
+      .txfm = computeNonUniformScaleTxfm(
+        { float(obstacle->pos.x), float(obstacle->pos.y), 0.f },
+        Quat::id(), { 1.f, 1.f, 1.f }),
+      .color = color,
+    });
+
+    for (u32 mesh_idx = 0; mesh_idx < obj.numMeshes; mesh_idx++) {
+      RenderMesh mesh = scene.renderMeshes[obj.meshOffset + mesh_idx];
+      enc.drawIndexed(mesh.vertexOffset, mesh.indexOffset,
+                      mesh.numTriangles);
+    }
+  }
+}
+
 void Viz::renderBoard(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
 {
   (void)rt;
@@ -1229,6 +1275,7 @@ void Viz::render(SimRT &rt)
     RasterPassEncoder enc = frameEnc.beginRasterPass(frame.render.hdrPass);
     renderBoard(rt, frame, enc);
     renderGenericLocationEffects(rt, frame, enc);
+    renderWalls(rt, frame, enc);
     renderUnits(rt, frame, enc);
     frameEnc.endRasterPass(enc);
   }
