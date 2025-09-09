@@ -154,10 +154,10 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
       dx = 1;
       break;
     case MoveAction::Up:
-      dy = -1;
+      dy = 1;
       break;
     case MoveAction::Down:
-      dy = 1;
+      dy = -1;
       break;
     default:
       break;

@@ -677,8 +677,11 @@ static UIControl::Flag updateCamera(OrbitCam &cam, UserInput &input,
   UIControl::Flag result = UIControl::None;
   Vector2 mouse_delta = events.mouseDelta();
   Vector2 mouse_scroll = events.mouseScroll();
+  Vector3 translate = Vector3::zero();
+  
+  bool control_camera = input.isDown(InputID::MouseRight) || input.isDown(InputID::Shift);
 
-  if (input.isDown(InputID::MouseRight) || input.isDown(InputID::Shift)) {
+  if (control_camera) {
     result |= UIControl::RawMouseMode;
 
     cam.azimuth -= mouse_delta.y * MOUSE_SPEED * delta_t;
@@ -691,15 +694,15 @@ static UIControl::Flag updateCamera(OrbitCam &cam, UserInput &input,
     while (cam.heading < -PI) {
       cam.heading += 2.f * PI;
     }
-  }
 
-  if (mouse_scroll.y != 0.f) {
-    float zoom_change = -mouse_scroll.y * SCROLL_SPEED * delta_t;
-    if (zoom_change < 0.f) {
-      cam.zoom /= 1.f - zoom_change;
-    }
-    if (zoom_change > 0.f) {
-      cam.zoom *= 1.f + zoom_change;
+    if (mouse_scroll.y != 0.f) {
+      float zoom_change = -mouse_scroll.y * SCROLL_SPEED * delta_t;
+      if (zoom_change < 0.f) {
+        cam.zoom /= 1.f - zoom_change;
+      }
+      if (zoom_change > 0.f) {
+        cam.zoom *= 1.f + zoom_change;
+      }
     }
   }
 
@@ -712,20 +715,20 @@ static UIControl::Flag updateCamera(OrbitCam &cam, UserInput &input,
   cam.right = normalize(cross(cam.fwd, WORLD_UP));
   cam.up = normalize(cross(cam.right, cam.fwd));
 
-  Vector3 translate = Vector3::zero();
-
-  // Move the focus point.
-  if (input.isDown(InputID::W)) {
-    translate += cam.up;
-  }
-  if (input.isDown(InputID::A)) {
-    translate -= cam.right;
-  }
-  if (input.isDown(InputID::S)) {
-    translate -= cam.up;
-  }
-  if (input.isDown(InputID::D)) {
-    translate += cam.right;
+  if (control_camera) {
+    // Move the focus point.
+    if (input.isDown(InputID::W)) {
+      translate += cam.up;
+    }
+    if (input.isDown(InputID::A)) {
+      translate -= cam.right;
+    }
+    if (input.isDown(InputID::S)) {
+      translate -= cam.up;
+    }
+    if (input.isDown(InputID::D)) {
+      translate += cam.right;
+    }
   }
 
   cam.target += translate * CAM_MOVE_SPEED * delta_t;
@@ -835,36 +838,61 @@ UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
                      const char *text_input, float ui_scale, float delta_t)
 {
   UIControl ui_ctrl {};
-
   ui_ctrl.flags |= updateCamera(cam, input, events, delta_t);
-
   // Handle unit selection on left click (when not camera dragging)
-  if (events.downEvent(InputID::MouseLeft) && 
-      !input.isDown(InputID::MouseRight) && 
+  if (!input.isDown(InputID::MouseRight) && 
       !input.isDown(InputID::Shift)) {
-    Vector2 mousePos = input.mousePosition();
-    GridPos clickedPos = screenToGridPos(mousePos);
-    
-    selectedGridPos = clickedPos;
-    
-    if (clickedPos.x == -1 && clickedPos.y == -1) {
-      selectedUnit = UnitID::none();
-    } else {
-      World *world = sim->activeWorlds[curVizActiveWorld];
+    if (events.downEvent(InputID::MouseLeft)) {
+      Vector2 mousePos = input.mousePosition();
+      GridPos clickedPos = screenToGridPos(mousePos);
+      
       selectedGridPos = clickedPos;
       
-      // Check if there's a unit at this position
-      Cell& cell = world->grid[clickedPos.y][clickedPos.x];
-      if (cell.actorID != GenericID::none() && cell.actorID.type == (i32)ActorType::Unit) {
-        // Try to get the unit
-        selectedUnit = UnitID::fromGeneric(cell.actorID);
-        UnitPtr unit = world->units.get(selectedUnit);
-        if (!unit) {
+      if (clickedPos.x == -1 && clickedPos.y == -1) {
+        selectedUnit = UnitID::none();
+      } else {
+        World *world = sim->activeWorlds[curVizActiveWorld];
+        selectedGridPos = clickedPos;
+        
+        // Check if there's a unit at this position
+        Cell& cell = world->grid[clickedPos.y][clickedPos.x];
+        if (cell.actorID != GenericID::none() && cell.actorID.type == (i32)ActorType::Unit) {
+          // Try to get the unit
+          selectedUnit = UnitID::fromGeneric(cell.actorID);
+          UnitPtr unit = world->units.get(selectedUnit);
+          if (!unit) {
+            selectedUnit = UnitID::none();
+          }
+        } else {
+          // No unit at this position
           selectedUnit = UnitID::none();
         }
-      } else {
-        // No unit at this position
-        selectedUnit = UnitID::none();
+      }
+    }
+    
+    World *world = sim->activeWorlds[curVizActiveWorld];
+    bool player_moved = false;
+    if (selectedUnit == world->turnCur) {
+      UnitAction playerAction = {};
+      if (events.downEvent(InputID::W)) {
+        player_moved = true;
+        playerAction.move = MoveAction::Up;
+      } else if (events.downEvent(InputID::A)) {
+        player_moved = true;
+        playerAction.move = MoveAction::Left;
+      } else if (events.downEvent(InputID::S)) {
+        player_moved = true;
+        playerAction.move = MoveAction::Down;
+      } else if (events.downEvent(InputID::D)) {
+        player_moved = true;
+        playerAction.move = MoveAction::Right;
+      } else if (events.downEvent(InputID::Space)) {
+        player_moved = true;
+        playerAction.move = MoveAction::Wait;
+      }
+      
+      if (player_moved) {
+        stepWorld(rt, world, playerAction);
       }
     }
   }

@@ -150,8 +150,6 @@ struct Viz {
 
   Scene scene = {};
 
-  UnitAction playerAction = {};
-  
   // Unit selection state
   GridPos selectedGridPos = { -1, -1 };
   UnitID selectedUnit = UnitID::none();

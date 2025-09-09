@@ -59,10 +59,10 @@ float4 fragMain(V2F v2f) : SV_Target0
   
   float4 overlay = float4(0, 0, 0, 0);
   if (v2f.normal.z == 1 && all(grid_cell == drawData.curTurnPos)) {
-    overlay += float4(1, 0, 0, 0);
+    overlay += float4(0.8, 0, 0.8, 0);
   }
   if (v2f.normal.z == 1 && all(grid_cell == drawData.curSelectPos)) {
-    overlay += float4(0, 1, 0, 0);
+    overlay += float4(0.8, 0.5, 0, 0);
   }
   
   float4 color = brightness * albedo + overlay;
