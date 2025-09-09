@@ -75,13 +75,11 @@ float4 fragMain(V2F v2f) : SV_Target0
   // Use alpha channel for text, multiply by color
   float alpha = texColor.r;
   
-  // Apply text color
-  float3 finalColor = perDraw.color.rgb;
+  float4 fg_color = float4(perDraw.color.rgb, alpha);
   
-  // Add slight darkening for better visibility
-  float3 shadowColor = finalColor * 0.3;
-  float shadowAlpha = smoothstep(0.3, 0.5, alpha);
-  finalColor = lerp(shadowColor, finalColor, shadowAlpha);
+  float4 bg_color = float4(0.1, 0.1, 0.1, 0.5);
   
-  return float4(finalColor, alpha * perDraw.color.a);
+  float4 color = lerp(bg_color, fg_color, alpha);
+  
+  return color;
 }

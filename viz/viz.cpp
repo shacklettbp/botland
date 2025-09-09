@@ -379,6 +379,7 @@ void Viz::initMaterials(Runtime &rt)
       .numPerDrawBytes = sizeof(shader::NamePerDraw),
       .rasterConfig = {
         .depthCompare = DepthCompare::GreaterOrEqual,
+        .writeDepth = false,
         .cullMode = CullMode::None,
         .blending = {
           {
@@ -739,7 +740,7 @@ void Viz::buildImguiWidgets()
 
   // Fixed Turn Order window (upper-right)
   {
-    const float panelWidth = 260.0f;
+    const float panelWidth = 280.0f;
     const float panelHeight = 220.0f;
     
     ImGui::SetNextWindowPos(ImVec2(float(windowWidth) / 2 - panelWidth, 0.0f), ImGuiCond_Always);
@@ -767,8 +768,9 @@ void Viz::buildImguiWidgets()
             teamColor.z = fminf(teamColor.z + 0.2f, 1.0f);
           }
 
-          ImGui::TextColored(teamColor, "%s%s  HP:%d  Speed:%d  Attack: %s",
-                             isCurrent ? "> " : "  ", u->name.data, u->hp, u->speed,
+          ImGui::TextColored(teamColor, "%s%s: (%d %d)  HP:%d  Speed:%d  Attack: %s",
+                             isCurrent ? "> " : "  ", u->name.data, u->pos.x, u->pos.y,
+                             u->hp, u->speed,
                              ATTACK_TYPE_NAMES[static_cast<u32>(u->attackType)]);
 
           // Advance in the circular list (guard with count to avoid infinite loop)
@@ -879,9 +881,8 @@ UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
     ui_ctrl.flags |= UIControl::DisableIME;
   }
   
-  World *world = sim->activeWorlds[curVizActiveWorld];
-  
   #if 0
+  World *world = sim->activeWorlds[curVizActiveWorld];
   static float elapsed_time = 0.0f;
   elapsed_time += delta_t;
   if (elapsed_time >= 0.1f) {
