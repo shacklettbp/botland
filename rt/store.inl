@@ -228,6 +228,9 @@ PtrT PersistentStore<ID, ChunkT, PtrT>::create(u32 type_id)
     freeList = chunk->user.id[actor.offset];
 
     actor.type = type_id;
+    
+    chunk->user.id[actor.offset] = actor;
+    chunk->activeMask[actor.offset / 32] |= (1 << (actor.offset % 32));
 
     return PtrT(&chunk->user, actor.offset);
   }
