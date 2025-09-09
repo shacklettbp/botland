@@ -52,7 +52,7 @@ struct Scene {
 
 struct OrbitCam {
   Vector3 target = { i32(GRID_SIZE / 2) - 0.5f, i32(GRID_SIZE / 2) - 0.5f, 0.f };
-  float heading = 0.f;
+  float heading = 0.5f * PI;
   float azimuth = 0.25f * PI;
   float zoom = 10.f;
 
@@ -192,7 +192,7 @@ private:
 
   inline void buildImguiWidgets();
 
-  inline void renderGeo(
+  inline void renderBoard(
     SimRT &rt, FrameState &frame, RasterPassEncoder &enc);
 
   inline void renderUnits(

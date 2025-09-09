@@ -16,7 +16,6 @@ struct V2F {
   float4 pos    : SV_Position;
   float3 normal : NORMAL0;
   float2 uv     : TEXCOORD0;
-  float worldZ : TEXCOORD1;
 };
 
 [shader("vertex")]
@@ -40,8 +39,6 @@ V2F vertMain(uint idx: SV_VertexID)
   out.normal = normal_w;
   out.uv = uv;
 
-  out.worldZ = pos_w.z;
-
   return out;
 }
 
@@ -57,7 +54,17 @@ float4 fragMain(V2F v2f) : SV_Target0
   float brightness = lerp(0.25, 1, dot_view);
 
   float4 albedo = mat.tex.Sample(mat.sampler, v2f.uv);
-
-  float4 color = brightness * albedo;
+  
+  uint2 grid_cell = uint2(uint(2.0 * v2f.uv.y), drawData.gridSize.y - 1 - uint(2.0 * v2f.uv.x));
+  
+  float4 overlay = float4(0, 0, 0, 0);
+  if (v2f.normal.z == 1 && all(grid_cell == drawData.curTurnPos)) {
+    overlay += float4(1, 0, 0, 0);
+  }
+  if (v2f.normal.z == 1 && all(grid_cell == drawData.curSelectPos)) {
+    overlay += float4(0, 1, 0, 0);
+  }
+  
+  float4 color = brightness * albedo + overlay;
   return color;
 }

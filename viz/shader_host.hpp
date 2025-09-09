@@ -20,6 +20,9 @@ using float4 = Vector4;
 using float3 = Vector3;
 using float2 = Vector2;
 
+using int2 = std::array<int32_t, 2>;
+using int3 = std::array<int32_t, 3>;
+using int4 = std::array<int32_t, 4>;
 using uint2 = std::array<uint32_t, 2>;
 using uint3 = std::array<uint32_t, 3>;
 using uint4 = std::array<uint32_t, 4>;

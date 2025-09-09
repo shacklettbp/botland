@@ -845,7 +845,11 @@ UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
     Vector2 mousePos = input.mousePosition();
     GridPos clickedPos = screenToGridPos(mousePos);
     
-    if (clickedPos.x >= 0 && clickedPos.y >= 0) {
+    selectedGridPos = clickedPos;
+    
+    if (clickedPos.x == -1 && clickedPos.y == -1) {
+      selectedUnit = UnitID::none();
+    } else {
       World *world = sim->activeWorlds[curVizActiveWorld];
       selectedGridPos = clickedPos;
       
@@ -1046,16 +1050,29 @@ void Viz::renderUnits(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
   }
 }
 
-void Viz::renderGeo(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
+void Viz::renderBoard(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
 {
   (void)rt;
   enc.setParamBlock(0, frame.input.globalDataPB);
 
   enc.setShader(materials.boardShader);
   enc.setParamBlock(1, materials.boardPB);
+  
+  World *world = sim->activeWorlds[curVizActiveWorld];
+  
+  std::array<int, 2> curTurnPos = { -1, -1 };
+
+  {
+    UnitPtr unit = world->units.get(world->turnCur);
+    if (unit) {
+      curTurnPos = { unit->pos.x, unit->pos.y };
+    }
+  }
 
   enc.drawData(BoardDrawData {
     .gridSize = { GRID_SIZE, GRID_SIZE },
+    .curTurnPos = curTurnPos,
+    .curSelectPos = { selectedGridPos.x, selectedGridPos.y },
   });
 
   enc.draw(0, 12);
@@ -1090,7 +1107,7 @@ void Viz::render(SimRT &rt)
 
   {
     RasterPassEncoder enc = frameEnc.beginRasterPass(frame.render.hdrPass);
-    renderGeo(rt, frame, enc);
+    renderBoard(rt, frame, enc);
     renderUnits(rt, frame, enc);
     frameEnc.endRasterPass(enc);
   }

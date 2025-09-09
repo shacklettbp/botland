@@ -45,11 +45,11 @@ World * createWorld(
   world->units.init(rt, world->persistentArena);
 
   {
-    i32 base_spawn_x = GRID_SIZE / 2 - TEAM_SIZE / 2; 
+    i32 base_spawn_y = GRID_SIZE / 2 - TEAM_SIZE / 2; 
 
     for (i32 i = 0; i < TEAM_SIZE; i++) {
-      i32 spawn_x = base_spawn_x++;
-      i32 spawn_y = 0;
+      i32 spawn_x = 0;
+      i32 spawn_y = base_spawn_y++;
 
       UnitPtr u = world->units.create((u32)ActorType::Unit);
 
@@ -66,11 +66,11 @@ World * createWorld(
   }
 
   {
-    i32 base_spawn_x = GRID_SIZE / 2 - TEAM_SIZE / 2; 
+    i32 base_spawn_y = GRID_SIZE / 2 - TEAM_SIZE / 2; 
 
     for (i32 i = 0; i < TEAM_SIZE; i++) {
-      i32 spawn_x = base_spawn_x++; 
-      i32 spawn_y = GRID_SIZE - 1;
+      i32 spawn_x = GRID_SIZE - 1;
+      i32 spawn_y = base_spawn_y++;
 
       UnitPtr u = world->units.create((u32)ActorType::Unit);
 

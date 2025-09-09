@@ -45,6 +45,8 @@ PUB struct UnitsPerDraw {
 
 PUB struct BoardDrawData {
   PUB uint2 gridSize;
+  PUB int2 curTurnPos;
+  PUB int2 curSelectPos;
 };
 
 PUB struct HealthBarPerDraw {
