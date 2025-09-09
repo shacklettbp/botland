@@ -6,14 +6,19 @@
 
 namespace bot {
 
-static inline void unlinkUnitFromTurnOrder(World *world, UnitID id)
+// Destroy unit and unlink from turn order
+static inline void killUnit(World *world, UnitID id)
 {
   UnitPtr u = world->units.get(id);
   TurnListLinkedList &turnListItem = u->turnListItem;
 
   UnitID prev_id = turnListItem.prev;
   UnitID next_id = turnListItem.next;
-
+  
+  if (world->turnHead == id) {
+    world->turnHead = next_id;
+  }
+  
   if (prev_id) {
     UnitPtr prev = world->units.get(prev_id);
     prev->turnListItem.next = next_id;
@@ -26,6 +31,11 @@ static inline void unlinkUnitFromTurnOrder(World *world, UnitID id)
 
   u->turnListItem.prev = UnitID::none();
   u->turnListItem.next = UnitID::none();
+  
+  world->grid[u->pos.y][u->pos.x].actorID = GenericID::none();
+  
+  world->killUnitJobs.add(KillUnitJob { .unitID = id });
+  world->numAliveUnits--;
 }
 
 static inline constexpr auto ALL_ATTACK_PROPERTIES = std::to_array<AttackProperties>({
@@ -56,6 +66,7 @@ World * createWorld(
 
   world->units.init(rt, world->persistentArena);
   world->locationEffects.init(rt, world->persistentArena);
+  world->killUnitJobs.init(rt, world->tmpArena);
   
   auto initializeUnit = [&](i32 team, i32 team_offset, i32 spawn_x, i32 spawn_y) {
     UnitPtr u = world->units.create((u32)ActorType::Unit);
@@ -150,8 +161,13 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
 {
   UnitID cur_unit_id = world->turnCur;
   UnitPtr unit = world->units.get(cur_unit_id);
-  assert(unit && unit->hp > 0);
+  
+  if (!unit) { // Everyone is dead
+    return;
+  }
 
+  assert(unit->hp > 0);
+  
   // Calculate movement direction offsets
   i32 dx = 0, dy = 0;
   switch (action.move) {
@@ -199,12 +215,25 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
           attacked = true;
           
           if (target_unit->hp <= 0) {
-            world->units.destroy(target_id);
-
-            // Remove dead unit from grid and turn order
-            world->grid[attack_y][attack_x].actorID = GenericID::none();
-            unlinkUnitFromTurnOrder(world, target_id);
-            world->numAliveUnits--;
+            killUnit(world, target_id);
+            
+            if (unit->attackProp.effect == AttackEffect::VampiricBite) {
+              unit->hp += unit->attackProp.damage;
+            }
+          } else {
+            if (unit->attackProp.effect == AttackEffect::Push) {
+              i32 push_x = attack_x + dx;
+              i32 push_y = attack_y + dy;
+              if (push_x >= 0 && push_x < GRID_SIZE && push_y >= 0 && push_y < GRID_SIZE) {
+                GenericID push_target_id = world->grid[push_y][push_x].actorID;
+                if (!push_target_id) {
+                  world->grid[push_y][push_x].actorID = target_id.toGeneric();
+                  world->grid[attack_y][attack_x].actorID = GenericID::none();
+                  target_unit->pos.x = push_x;
+                  target_unit->pos.y = push_y;
+                }
+              }
+            }
           }
         }
       }
@@ -248,13 +277,53 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
       }
     }
   }
+  
+  for (auto effect : world->locationEffects) {
+    Cell &cell = world->grid[effect->pos.y][effect->pos.x];
+    
+    if (cell.actorID && cell.actorID.type == (i32)ActorType::Unit) {
+      UnitID unit_id = UnitID::fromGeneric(cell.actorID);
+      UnitPtr affected_unit = world->units.get(unit_id);
+      assert(affected_unit);
+
+      switch (effect->type) {
+        case LocationEffectType::Poison: {
+          affected_unit->hp -= 1;
+          
+          if (affected_unit->hp <= 0) {
+            killUnit(world, unit_id);
+          }
+        } break;
+        case LocationEffectType::Healing: {
+          affected_unit->hp += 1;
+          effect->duration--;
+        } break;
+        default: break;
+      }
+    }
+
+    if (effect->type == LocationEffectType::Poison) {
+      effect->duration--;
+    }
+
+    if (effect->duration <= 0) {
+      world->locationEffects.destroy(cell.effectID);
+      cell.effectID = LocationEffectID::none();
+    }
+  }
 
   {
     // Advance to next alive unit
     world->turnCur = unit->turnListItem.next ? unit->turnListItem.next : world->turnHead;
-
-    rt.releaseArena(world->tmpArena);
   }
+  
+  for (auto job : world->killUnitJobs) {
+    world->units.destroy(job.unitID);
+  }
+  
+  world->killUnitJobs.clear();
+
+  rt.releaseArena(world->tmpArena);
 }
 
 void destroyWorld(SimRT &rt, World *world)

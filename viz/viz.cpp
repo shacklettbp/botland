@@ -879,6 +879,13 @@ void Viz::buildImguiWidgets()
 UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
                      const char *text_input, float ui_scale, float delta_t)
 {
+  if (events.downEvent(InputID::K1)) {
+    World *world = sim->activeWorlds[curVizActiveWorld];
+    destroyWorld(rt, world);
+    sim->activeWorlds[curVizActiveWorld] =
+      createWorld(rt, (u64)curVizActiveWorld | (u64(numWorldResets++) << 32));
+  }
+
   UIControl ui_ctrl {};
   ui_ctrl.flags |= updateCamera(cam, input, events, delta_t);
   // Handle unit selection on left click (when not camera dragging)
@@ -1053,7 +1060,7 @@ void Viz::renderGenericLocationEffects(SimRT &rt, FrameState &frame,
     Vector4 color = {};
     switch (effect->type) {
       case LocationEffectType::Poison:
-        color = Vector4(1.0f, 0.2f, 0.2f, 1.0f);
+        color = Vector4(0.2f, 1.0f, 0.2f, 1.0f);
         break;
       case LocationEffectType::Healing:
         color = Vector4(0.2f, 0.2f, 1.0f, 1.0f);

@@ -5,14 +5,12 @@ namespace bot {
 template <typename ElemT, int ItemsPerChunk>
 void TemporaryStore<ElemT, ItemsPerChunk>::init(Runtime &rt, MemArena &arena_in)
 {
-  (void)rt;
+  stateHdl = rt.stateHandle();
   arena = &arena_in;
 }
 
 template <typename ElemT, int ItemsPerChunk>
-void TemporaryStore<ElemT, ItemsPerChunk>::add(
-    Runtime &rt,
-    ElemT contact)
+void TemporaryStore<ElemT, ItemsPerChunk>::add(ElemT contact)
 {
   AtomicU64Ref chunks_range_atomic(chunksRange);
 
@@ -47,13 +45,13 @@ void TemporaryStore<ElemT, ItemsPerChunk>::add(
 
     if (chunk_idx >= chunksArrayCapacity) {
       if (chunksArrayCapacity == 0) {
-        chunks = rt.arenaAllocN<Chunk *>(
-            *arena, ItemsPerChunk);
+        chunks = (Chunk **)arenaAlloc(stateHdl, *arena,
+          sizeof(Chunk *) * NUM_INIT_CHUNK_PTRS, alignof(Chunk *));
         chunksArrayCapacity = NUM_INIT_CHUNK_PTRS;
       } else {
         i32 new_capacity = chunksArrayCapacity * 2;
-        auto **new_chunks = rt.arenaAllocN<Chunk *>(
-            *arena, new_capacity);
+        auto **new_chunks = (Chunk **)arenaAlloc(stateHdl, *arena,
+            sizeof(Chunk *) * new_capacity, alignof(Chunk *));
 
         copyN<Chunk *>(new_chunks, chunks, chunksArrayCapacity);
         chunks = new_chunks;
@@ -61,8 +59,8 @@ void TemporaryStore<ElemT, ItemsPerChunk>::add(
       }
     }
 
-    chunks[chunk_idx] = 
-      rt.arenaAlloc<Chunk>(*arena);
+    chunks[chunk_idx] = (Chunk *)arenaAlloc(stateHdl, *arena,
+      sizeof(Chunk), alignof(Chunk));
 
     u64 new_range = (u64(offset + ItemsPerChunk) << 32) | 
       u64(offset + 1);
@@ -87,6 +85,7 @@ void TemporaryStore<ElemT, ItemsPerChunk>::clear()
   chunks = nullptr;
 }
 
+#if 0
 template <typename ElemT, int ItemsPerChunk>
 template <typename FnT>
 void TemporaryStore<ElemT, ItemsPerChunk>::iterate(FnT fn)
@@ -128,6 +127,7 @@ void TemporaryStore<ElemT, ItemsPerChunk>::warpIterate(FnT fn)
   }
 }
 #endif
+#endif
 
 template <typename ElemT, int ItemsPerChunk>
 ElemT * TemporaryStore<ElemT, ItemsPerChunk>::get(i32 idx)
@@ -136,6 +136,70 @@ ElemT * TemporaryStore<ElemT, ItemsPerChunk>::get(i32 idx)
   u32 sub_idx = idx % ItemsPerChunk;
   Chunk *chk = chunks[chunk_idx];
   return &chk->items[sub_idx];
+}
+
+template <typename ElemT, int ItemsPerChunk>
+typename TemporaryStore<ElemT, ItemsPerChunk>::Iterator::reference
+TemporaryStore<ElemT, ItemsPerChunk>::Iterator::operator*() const
+{
+  u32 chunk_idx = currentIdx / ItemsPerChunk;
+  u32 sub_idx = currentIdx % ItemsPerChunk;
+  Chunk *chk = store->chunks[chunk_idx];
+  return chk->items[sub_idx];
+}
+
+template <typename ElemT, int ItemsPerChunk>
+typename TemporaryStore<ElemT, ItemsPerChunk>::Iterator::pointer
+TemporaryStore<ElemT, ItemsPerChunk>::Iterator::operator->() const
+{
+  u32 chunk_idx = currentIdx / ItemsPerChunk;
+  u32 sub_idx = currentIdx % ItemsPerChunk;
+  Chunk *chk = store->chunks[chunk_idx];
+  return &chk->items[sub_idx];
+}
+
+template <typename ElemT, int ItemsPerChunk>
+typename TemporaryStore<ElemT, ItemsPerChunk>::Iterator&
+TemporaryStore<ElemT, ItemsPerChunk>::Iterator::operator++()
+{
+  currentIdx++;
+  return *this;
+}
+
+template <typename ElemT, int ItemsPerChunk>
+typename TemporaryStore<ElemT, ItemsPerChunk>::Iterator
+TemporaryStore<ElemT, ItemsPerChunk>::Iterator::operator++(int)
+{
+  Iterator tmp = *this;
+  ++(*this);
+  return tmp;
+}
+
+template <typename ElemT, int ItemsPerChunk>
+bool TemporaryStore<ElemT, ItemsPerChunk>::Iterator::operator==(const Iterator& other) const
+{
+  return currentIdx == other.currentIdx;
+}
+
+template <typename ElemT, int ItemsPerChunk>
+bool TemporaryStore<ElemT, ItemsPerChunk>::Iterator::operator!=(const Iterator& other) const
+{
+  return !(*this == other);
+}
+
+template <typename ElemT, int ItemsPerChunk>
+typename TemporaryStore<ElemT, ItemsPerChunk>::Iterator
+TemporaryStore<ElemT, ItemsPerChunk>::begin()
+{
+  return Iterator(this, 0);
+}
+
+template <typename ElemT, int ItemsPerChunk>
+typename TemporaryStore<ElemT, ItemsPerChunk>::Iterator
+TemporaryStore<ElemT, ItemsPerChunk>::end()
+{
+  u32 offset = u32(chunksRange);
+  return Iterator(this, offset);
 }
   
 inline constexpr i32 NUM_INIT_CHUNK_PTRS = 16;

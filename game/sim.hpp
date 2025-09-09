@@ -128,6 +128,10 @@ struct Cell {
   LocationEffectID effectID = {};
 };
 
+struct KillUnitJob {
+  UnitID unitID = {};
+};
+
 struct World {
   MemArena persistentArena = {};
   MemArena tmpArena = {};
@@ -138,7 +142,9 @@ struct World {
 
   UnitStore units = {};
   LocationEffectStore locationEffects = {};
-
+  
+  TemporaryStore<KillUnitJob, 32> killUnitJobs = {};
+  
   UnitID playerTeam[TEAM_SIZE];
   UnitID enemyTeam[TEAM_SIZE];
 

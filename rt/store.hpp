@@ -20,6 +20,7 @@ struct TemporaryStore {
     ElemT items[ItemsPerChunk];
   };
 
+  RTStateHandle stateHdl = {};
   MemArena *arena = nullptr;
   Chunk **chunks = nullptr;
   i32 chunksArrayCapacity = 0;
@@ -27,18 +28,39 @@ struct TemporaryStore {
   u64 chunksRange = 0;
 
   void init(Runtime &rt, MemArena &arena);
-  void add(Runtime &rt, ElemT contact);
+  void add(ElemT contact);
   void clear();
 
-  template <typename FnT>
-  inline void iterate(FnT fn);
-
-#ifdef BOT_GPU
-  template <typename FnT>
-  inline void warpIterate(FnT fn);
-#endif
-
   ElemT *get(i32 idx);
+
+  class Iterator {
+  private:
+    TemporaryStore *store;
+    i32 currentIdx;
+    i32 totalItems;
+    
+  public:
+    Iterator(TemporaryStore *s, i32 idx)
+      : store(s), currentIdx(idx) {
+      totalItems = u32(store->chunksRange);
+    }
+    
+    using iterator_category = std::forward_iterator_tag;
+    using value_type = ElemT;
+    using difference_type = std::ptrdiff_t;
+    using pointer = ElemT*;
+    using reference = ElemT&;
+    
+    reference operator*() const;
+    pointer operator->() const;
+    Iterator& operator++();
+    Iterator operator++(int);
+    bool operator==(const Iterator& other) const;
+    bool operator!=(const Iterator& other) const;
+  };
+  
+  Iterator begin();
+  Iterator end();
 };
 
 template <typename ID, typename ChunkT, typename PtrT>

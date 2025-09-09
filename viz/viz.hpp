@@ -146,6 +146,8 @@ struct Viz {
   OrbitCam cam = {};
 
   Scene scene = {};
+  
+  int numWorldResets = 0;
 
   // Unit selection state
   GridPos selectedGridPos = { -1, -1 };
