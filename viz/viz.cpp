@@ -736,6 +736,51 @@ static UIControl::Flag updateCamera(OrbitCam &cam, UserInput &input,
 void Viz::buildImguiWidgets()
 {
   World *world = sim->activeWorlds[curVizActiveWorld];
+
+  // Fixed Turn Order window (upper-right)
+  {
+    const float panelWidth = 260.0f;
+    const float panelHeight = 220.0f;
+    
+    ImGui::SetNextWindowPos(ImVec2(float(windowWidth) / 2 - panelWidth, 0.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(panelWidth, panelHeight), ImGuiCond_Always);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
+                             ImGuiWindowFlags_NoBringToFrontOnFocus;
+    if (ImGui::Begin("Turn Order", nullptr, flags)) {
+      if (world->turnHead) {
+        ImGui::Text("Units in turn order:");
+        ImGui::Separator();
+
+        UnitID id = world->turnHead;
+        for (i32 i = 0; i < world->numAliveUnits; i++) {
+          UnitPtr u = world->units.get(id);
+          if (!u) break;
+
+          bool isCurrent = (id == world->turnCur);
+          ImVec4 teamColor = (u->team == 0) ? ImVec4(1.0f, 0.2f, 0.2f, 1.0f)
+                                            : ImVec4(0.2f, 0.2f, 1.0f, 1.0f);
+          if (isCurrent) {
+            // Slightly brighter for the current unit
+            teamColor.x = fminf(teamColor.x + 0.2f, 1.0f);
+            teamColor.y = fminf(teamColor.y + 0.2f, 1.0f);
+            teamColor.z = fminf(teamColor.z + 0.2f, 1.0f);
+          }
+
+          ImGui::TextColored(teamColor, "%s%s  HP:%d  Speed:%d  Attack: %s",
+                             isCurrent ? "> " : "  ", u->name.data, u->hp, u->speed,
+                             ATTACK_TYPE_NAMES[static_cast<u32>(u->attackType)]);
+
+          // Advance in the circular list (guard with count to avoid infinite loop)
+          id = u->turnListItem.next ? u->turnListItem.next : UnitID::none();
+          if (!id) break;
+        }
+      } else {
+        ImGui::Text("No turn data available.");
+      }
+    }
+    ImGui::End();
+  }
   
   // Show unit inspector window if a unit is selected
   if (selectedUnit) {
@@ -836,6 +881,7 @@ UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
   
   World *world = sim->activeWorlds[curVizActiveWorld];
   
+  #if 0
   static float elapsed_time = 0.0f;
   elapsed_time += delta_t;
   if (elapsed_time >= 0.1f) {
@@ -845,6 +891,7 @@ UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
     
     elapsed_time = 0.0f;
   }
+  #endif
 
   return ui_ctrl;
 }

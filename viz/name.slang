@@ -40,7 +40,7 @@ V2F vertMain(uint idx: SV_VertexID)
   float3 camUp = camTxfm[1].xyz;
   
   // Calculate character position offset
-  float charWidth = perDraw.scale * 0.5;  // Approximate character width
+  float charWidth = perDraw.scale;  // Approximate character width
   float totalWidth = charWidth * perDraw.numChars;
   float xOffset = -totalWidth * 0.5 + charIdx * charWidth;
   

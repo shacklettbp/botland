@@ -61,7 +61,7 @@ World * createWorld(
       u->speed = DEFAULT_SPEED;
       u->team = 0;
       u->attackType = AttackType::Melee;
-      snprintf(u->name.data, sizeof(u->name.data), "R %d", i);
+      snprintf(u->name.data, sizeof(u->name.data), "R%d", i);
     }
   }
 
@@ -82,7 +82,7 @@ World * createWorld(
       u->speed = DEFAULT_SPEED;
       u->team = 1;
       u->attackType = AttackType::Melee;
-      snprintf(u->name.data, sizeof(u->name.data), "B %d", i + TEAM_SIZE);
+      snprintf(u->name.data, sizeof(u->name.data), "B%d", i + TEAM_SIZE);
     }
   }
 
