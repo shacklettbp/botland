@@ -28,6 +28,15 @@ static inline void unlinkUnitFromTurnOrder(World *world, UnitID id)
   u->turnListItem.next = UnitID::none();
 }
 
+static inline constexpr auto ALL_ATTACK_PROPERTIES = std::to_array<AttackProperties>({
+  { .range = 1, .damage = 2, .effect = AttackEffect::None },
+  { .range = 2, .damage = 1, .effect = AttackEffect::None },
+  { .range = 1, .damage = 1, .effect = AttackEffect::PoisonSpread },
+  { .range = 1, .damage = 0, .effect = AttackEffect::HealingBloom },
+  { .range = 1, .damage = 1, .effect = AttackEffect::VampiricBite },
+  { .range = 1, .damage = 1, .effect = AttackEffect::Push },
+});
+
 World * createWorld(
     SimRT &rt,
     u64 world_id)
@@ -46,18 +55,25 @@ World * createWorld(
   world->worldID = world_id;
 
   world->units.init(rt, world->persistentArena);
+  world->locationEffects.init(rt, world->persistentArena);
   
   auto initializeUnit = [&](i32 team, i32 team_offset, i32 spawn_x, i32 spawn_y) {
     UnitPtr u = world->units.create((u32)ActorType::Unit);
     world->grid[spawn_y][spawn_x].actorID = u->id.toGeneric();
 
     u->pos = { spawn_x, spawn_y };
-    u->hp = world->rng.sampleI32(DEFAULT_HP / 2, DEFAULT_HP);
-    u->speed = world->rng.sampleI32(DEFAULT_SPEED / 2, DEFAULT_SPEED);
+    u->hp = world->rng.sampleI32(1, DEFAULT_HP);
+    u->speed = world->rng.sampleI32(1, DEFAULT_SPEED);
     u->team = team;
-    u->attackType = (AttackType)world->rng.sampleI32(0, (i32)AttackType::NUM_ATTACK_TYPES);
-    snprintf(u->name.data, sizeof(u->name.data), "R%d", team_offset);
+
+    snprintf(u->name.data, sizeof(u->name.data), "%s%d", team == 0 ? "R" : "B", team_offset);
     
+    u->attackProp =
+      ALL_ATTACK_PROPERTIES[world->rng.sampleI32(0, ALL_ATTACK_PROPERTIES.size())];
+
+    u->passiveAbility = 
+      (PassiveAbility)world->rng.sampleI32(0, (i32)PassiveAbility::NUM_PASSIVE_ABILITIES);
+
     return u->id;
   };
 
@@ -164,18 +180,10 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
     i32 cur_y = unit->pos.y;
     
     // Determine attack and movement targets based on attack type
-    i32 attack_x = cur_x, attack_y = cur_y;
     i32 move_x = cur_x + dx, move_y = cur_y + dy;
     
-    if (unit->attackType == AttackType::Melee) {
-      // Melee attacks the adjacent tile
-      attack_x = move_x;
-      attack_y = move_y;
-    } else if (unit->attackType == AttackType::RangedGapOne) {
-      // RangedGapOne skips adjacent tile and attacks two tiles away
-      attack_x = cur_x + 2 * dx;
-      attack_y = cur_y + 2 * dy;
-    }
+    i32 attack_x = cur_x + dx * unit->attackProp.range;
+    i32 attack_y = cur_y + dy * unit->attackProp.range;
     
     // Check if we can attack an enemy at the attack position
     bool attacked = false;
@@ -187,7 +195,7 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
         assert(target_unit);
         if (target_unit->team != unit->team) {
           // Attack the enemy unit
-          target_unit->hp -= 1;
+          target_unit->hp -= unit->attackProp.damage;
           attacked = true;
           
           if (target_unit->hp <= 0) {
@@ -214,6 +222,28 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
           world->grid[move_y][move_x].actorID = unit->id.toGeneric();
           unit->pos.x = move_x;
           unit->pos.y = move_y;
+          
+          switch (unit->attackProp.effect) {
+            case AttackEffect::PoisonSpread: {
+              LocationEffectPtr effect =
+                world->locationEffects.create((u32)ActorType::LocationEffect);
+              world->grid[cur_y][cur_x].effectID = effect->id;
+              effect->pos.x = cur_x;
+              effect->pos.y = cur_y;
+              effect->duration = 2;
+              effect->type = LocationEffectType::Poison;
+            } break;
+            case AttackEffect::HealingBloom: {
+              LocationEffectPtr effect =
+                world->locationEffects.create((u32)ActorType::LocationEffect);
+              world->grid[cur_y][cur_x].effectID = effect->id;
+              effect->pos.x = cur_x;
+              effect->pos.y = cur_y;
+              effect->duration = 2;
+              effect->type = LocationEffectType::Healing;
+            } break;
+            default: break;
+          }
         }
       }
     }

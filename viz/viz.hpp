@@ -12,12 +12,6 @@
 namespace bot {
 using namespace gas;
 
-// Attack type string lookup table
-constexpr const char* ATTACK_TYPE_NAMES[] = {
-  "Melee",
-  "Ranged (Gap One)"
-};
-
 struct UIControl {
   enum class Flag : u32 {
     None         = 0,
@@ -79,6 +73,9 @@ struct Materials {
 
   // Units
   RasterShader unitsShader = {};
+  
+  // Generic location effects
+  RasterShader genericLocationEffectShader = {};
   
   // Health bars
   RasterShader healthBarShader = {};
@@ -191,6 +188,9 @@ private:
   inline void buildImguiWidgets();
 
   inline void renderBoard(
+    SimRT &rt, FrameState &frame, RasterPassEncoder &enc);
+  
+  inline void renderGenericLocationEffects(
     SimRT &rt, FrameState &frame, RasterPassEncoder &enc);
 
   inline void renderUnits(

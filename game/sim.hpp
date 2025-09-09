@@ -25,6 +25,7 @@ enum class ActorType : u32 {
   None = 0,
   Unit,
   Static,
+  LocationEffect,
 };
 
 enum class MoveAction : u32 {
@@ -36,10 +37,31 @@ enum class MoveAction : u32 {
   NUM_MOVE_ACTIONS,
 };
 
-enum class AttackType : u32 {
-  Melee,
-  RangedGapOne,
-  NUM_ATTACK_TYPES,
+enum class LocationEffectType : u32 {
+  Poison,
+  Healing,
+  NUM_LOCATION_EFFECT_TYPES,
+};
+
+enum class AttackEffect : u32 {
+  None,
+  PoisonSpread,
+  HealingBloom,
+  VampiricBite,
+  Push,
+  NUM_ATTACK_EFFECTS,
+};
+
+struct AttackProperties {
+  i32 range = 0;
+  i32 damage = 0;
+  AttackEffect effect = AttackEffect::None;
+};
+
+enum class PassiveAbility : u32 {
+  None,
+  HolyAura,
+  NUM_PASSIVE_ABILITIES,
 };
 
 struct UnitAction {
@@ -66,7 +88,8 @@ struct UnitName {
 };
 
 #define UNIT_FIELDS(F) \
-  F(AttackType, attackType) \
+  F(AttackProperties, attackProp) \
+  F(PassiveAbility, passiveAbility) \
   F(i32, speed) \
   F(GridPos, pos) \
   F(i32, hp) \
@@ -77,6 +100,17 @@ struct UnitName {
 BOT_PERSISTENT_STORE(Unit, UnitID, 64, UNIT_FIELDS)
 
 #undef UNIT_FIELDS
+  
+BOT_PERSISTENT_ID(LocationEffectID)
+  
+#define LOCATION_EFFECT_FIELDS(F) \
+  F(GridPos, pos) \
+  F(LocationEffectType, type) \
+  F(i32, duration)
+  
+BOT_PERSISTENT_STORE(LocationEffect, LocationEffectID, 64, LOCATION_EFFECT_FIELDS)
+  
+#undef LOCATION_EFFECT_FIELDS
 
 struct MLInterface {
   i32 * episodeDoneEvents = nullptr;
@@ -91,6 +125,7 @@ struct MLInterface {
 
 struct Cell {
   GenericID actorID = {};
+  LocationEffectID effectID = {};
 };
 
 struct World {
@@ -101,7 +136,8 @@ struct World {
 
   u64 worldID = 0;
 
-  UnitStore units;
+  UnitStore units = {};
+  LocationEffectStore locationEffects = {};
 
   UnitID playerTeam[TEAM_SIZE];
   UnitID enemyTeam[TEAM_SIZE];

@@ -14,6 +14,20 @@
 
 namespace bot {
 
+// Attack type string lookup table
+constexpr const char* ATTACK_EFFECT_NAMES[] = {
+  "None",
+  "Poison Spread",
+  "Healing Bloom",
+  "Vampiric Bite",
+  "Push",
+};
+
+constexpr const char* PASSIVE_ABILITY_NAMES[] = {
+  "None",
+  "Holy Aura",
+};
+
 static constexpr inline TextureFormat DEPTH_TEXTURE_FMT =
   TextureFormat::Depth32_Float;
 
@@ -42,6 +56,8 @@ static Scene loadModels(GPUDevice *gpu, GPUQueue tx_queue)
         (fs::path(BOT_DATA_DIR) / "cube_render.obj").string());
     importer.importAsset(
         (fs::path(BOT_DATA_DIR) / "smooth_sphere_render.obj").string());
+    importer.importAsset(
+        (fs::path(BOT_DATA_DIR) / "location_effect.obj").string());
   }
 
   ImportedAssets &assets = importer.getImportedAssets();
@@ -303,6 +319,27 @@ void Viz::initMaterials(Runtime &rt)
       },
     });
   }
+  
+  {
+    materials.genericLocationEffectShader = gpu->createRasterShader({
+      .byteCode = shaders.getByteCode(MaterialShaderID::GenericLocationEffect),
+      .vertexEntry = "vertMain",
+      .fragmentEntry = "fragMain",
+      .rasterPass = hdrPassInterface,
+      .paramBlockTypes = { globalDataPBType },
+      .numPerDrawBytes = sizeof(shader::GenericLocationEffectPerDraw),
+      .vertexBuffers = {{
+        .stride = sizeof(RenderVertex), .attributes = {
+          { .offset = offsetof(RenderVertex, pos), .format = Vec3_F32 },
+          { .offset = offsetof(RenderVertex, normal),  .format = Vec3_F32 },
+          { .offset = offsetof(RenderVertex, uv), .format = Vec2_F32 },
+        },
+      }},
+      .rasterConfig = {
+        .depthCompare = DepthCompare::GreaterOrEqual,
+      },
+    });
+  }
 
   {
     materials.unitsShader = gpu->createRasterShader({
@@ -405,6 +442,7 @@ void Viz::cleanupMaterials()
     fontAtlas.destroy(gpu);
     
     gpu->destroyRasterShader(materials.healthBarShader);
+    gpu->destroyRasterShader(materials.genericLocationEffectShader);
     gpu->destroyRasterShader(materials.unitsShader);
   }
 
@@ -743,7 +781,7 @@ void Viz::buildImguiWidgets()
 
   // Fixed Turn Order window (upper-right)
   {
-    const float panelWidth = 350.0f;
+    const float panelWidth = 280.0f;
     const float panelHeight = 220.0f;
     
     ImGui::SetNextWindowPos(ImVec2(float(windowWidth) / 2 - panelWidth, 0.0f), ImGuiCond_Always);
@@ -771,10 +809,9 @@ void Viz::buildImguiWidgets()
             teamColor.z = fminf(teamColor.z + 0.2f, 1.0f);
           }
 
-          ImGui::TextColored(teamColor, "%s%s: (%d %d)  HP:%d  Speed:%d  Attack: %s",
+          ImGui::TextColored(teamColor, "%s%s: (%d %d)  HP:%d  Speed:%d",
                              isCurrent ? "> " : "  ", u->name.data, u->pos.x, u->pos.y,
-                             u->hp, u->speed,
-                             ATTACK_TYPE_NAMES[static_cast<u32>(u->attackType)]);
+                             u->hp, u->speed);
 
           // Advance in the circular list (guard with count to avoid infinite loop)
           id = u->turnListItem.next ? u->turnListItem.next : UnitID::none();
@@ -813,10 +850,15 @@ void Viz::buildImguiWidgets()
       
       // Speed
       ImGui::Text("Speed: %d", unit->speed);
+
+      // Attack
+      ImGui::Text("Attack Range: %d", unit->attackProp.range);
+      ImGui::Text("Attack Damage: %d", unit->attackProp.damage);
+      ImGui::Text("Attack Effect: %s",
+        ATTACK_EFFECT_NAMES[static_cast<u32>(unit->attackProp.effect)]);
       
-      // Attack type
-      const char* attackTypeStr = ATTACK_TYPE_NAMES[static_cast<u32>(unit->attackType)];
-      ImGui::Text("Attack Type: %s", attackTypeStr);
+      ImGui::Text("Passive Ability: %s",
+        PASSIVE_ABILITY_NAMES[static_cast<u32>(unit->passiveAbility)]);
       
       ImGui::End();
     } else {
@@ -993,6 +1035,49 @@ static NonUniformScaleObjectTransform computeNonUniformScaleTxfm(
   return out;
 }
 
+void Viz::renderGenericLocationEffects(SimRT &rt, FrameState &frame,
+                                       RasterPassEncoder &enc)
+{ 
+  (void)rt;
+  
+  World *world = sim->activeWorlds[curVizActiveWorld];
+
+  enc.setParamBlock(0, frame.input.globalDataPB);
+  enc.setShader(materials.genericLocationEffectShader);
+  enc.setVertexBuffer(0, scene.geoBuffer);
+  enc.setIndexBufferU32(scene.geoBuffer);
+  
+  RenderObject obj = scene.renderObjects[2];
+  
+  for (auto effect : world->locationEffects) {
+    Vector4 color = {};
+    switch (effect->type) {
+      case LocationEffectType::Poison:
+        color = Vector4(1.0f, 0.2f, 0.2f, 1.0f);
+        break;
+      case LocationEffectType::Healing:
+        color = Vector4(0.2f, 0.2f, 1.0f, 1.0f);
+        break;
+      default:
+        color = Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+        break;
+    }
+
+    enc.drawData(shader::GenericLocationEffectPerDraw {
+      .txfm = computeNonUniformScaleTxfm(
+        { float(effect->pos.x), float(effect->pos.y), 0.15f },
+        Quat::id(), { 1.f, 1.f, 0.5f }),
+      .color = color,
+    });
+
+    for (u32 mesh_idx = 0; mesh_idx < obj.numMeshes; mesh_idx++) {
+      RenderMesh mesh = scene.renderMeshes[obj.meshOffset + mesh_idx];
+      enc.drawIndexed(mesh.vertexOffset, mesh.indexOffset,
+                      mesh.numTriangles);
+    }
+  }
+}
+
 void Viz::renderUnits(SimRT &rt, FrameState &frame, RasterPassEncoder &enc)
 {
   (void)rt;
@@ -1136,6 +1221,7 @@ void Viz::render(SimRT &rt)
   {
     RasterPassEncoder enc = frameEnc.beginRasterPass(frame.render.hdrPass);
     renderBoard(rt, frame, enc);
+    renderGenericLocationEffects(rt, frame, enc);
     renderUnits(rt, frame, enc);
     frameEnc.endRasterPass(enc);
   }

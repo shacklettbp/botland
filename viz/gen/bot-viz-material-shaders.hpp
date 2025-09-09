@@ -8,6 +8,7 @@ enum class MaterialShaderID : u32 {
   Units = 1,
   HealthBar = 2,
   Name = 3,
+  GenericLocationEffect = 4,
 };
 
 struct VizMaterialShaders : gas::CompiledShadersBlob {

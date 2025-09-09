@@ -2,8 +2,7 @@ import shader_host;
 import utils;
 
 ParameterBlock<GlobalPassData> global;
-
-ParameterBlock<UnitsPerDraw> perDraw;
+ParameterBlock<GenericLocationEffectPerDraw> perDraw;
 
 struct VertInput {
   float3 pos    : Position;

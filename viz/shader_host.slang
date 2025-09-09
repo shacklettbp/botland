@@ -67,4 +67,9 @@ PUB struct NamePerDraw {
   uint pad2;
 };
 
+PUB struct GenericLocationEffectPerDraw {
+  PUB NonUniformScaleObjectTransform txfm;
+  PUB float4 color;
+};
+
 #undef PUB

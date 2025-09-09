@@ -15,6 +15,7 @@ gas_add_shaders(TARGET bot-viz-material-shaders
     Units units.slang
     HealthBar healthbar.slang
     Name name.slang
+    GenericLocationEffect generic_location_effect.slang
 )
 
 add_library(bot-viz STATIC
