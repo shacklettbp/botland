@@ -158,52 +158,32 @@ World * createWorld(
   
   {
     i32 wall_config = world->rng.sampleI32(0, 3);
-    
+
+    auto spawn2x2Walls = [&](i32 base_x, i32 base_y) {
+      for (i32 i = 0; i < 2; i++) {
+        for (i32 j = 0; j < 2; j++) {
+          ObstaclePtr obstacle = world->obstacles.create(u32(ActorType::Obstacle));
+          obstacle->pos.x = base_x + i;
+          obstacle->pos.y = base_y+ j;
+          obstacle->type = ObstacleType::Wall;  
+          
+          world->grid[obstacle->pos.y][obstacle->pos.x].actorID = obstacle->id.toGeneric();
+        }
+      }
+    };
+
     switch (wall_config) {
       case 0: break;
       case 1: {
         i32 center_x = GRID_SIZE / 2 - 1;
         i32 center_y = GRID_SIZE / 2 - 1;
-
-        for (i32 i = 0; i < 2; i++) {
-          for (i32 j = 0; j < 2; j++) {
-            ObstaclePtr obstacle = world->obstacles.create(u32(ActorType::Obstacle));
-            obstacle->pos.x = center_x + i;
-            obstacle->pos.y = center_y + j;
-            obstacle->type = ObstacleType::Wall;  
-            
-            world->grid[obstacle->pos.y][obstacle->pos.x].actorID = obstacle->id.toGeneric();
-          }
-        }
+        
+        spawn2x2Walls(center_x, center_y);
       } break;
       case 2: {
         i32 center_x = GRID_SIZE / 2 - 1;
-        
-        i32 base_y = 0;
-
-        for (i32 i = 0; i < 2; i++) {
-          for (i32 j = 0; j < 2; j++) {
-            ObstaclePtr obstacle = world->obstacles.create(u32(ActorType::Obstacle));
-            obstacle->pos.x = center_x + i;
-            obstacle->pos.y = base_y+ j;
-            obstacle->type = ObstacleType::Wall;  
-            
-            world->grid[obstacle->pos.y][obstacle->pos.x].actorID = obstacle->id.toGeneric();
-          }
-        }
-        
-        base_y = GRID_SIZE - 2;
-
-        for (i32 i = 0; i < 2; i++) {
-          for (i32 j = 0; j < 2; j++) {
-            ObstaclePtr obstacle = world->obstacles.create(u32(ActorType::Obstacle));
-            obstacle->pos.x = center_x + i;
-            obstacle->pos.y = base_y  + j;
-            obstacle->type = ObstacleType::Wall;  
-            
-            world->grid[obstacle->pos.y][obstacle->pos.x].actorID = obstacle->id.toGeneric();
-          }
-        }
+        spawn2x2Walls(center_x, 0);
+        spawn2x2Walls(center_x, GRID_SIZE - 2);
       } break;
     }
   }
