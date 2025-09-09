@@ -3,6 +3,7 @@
 #include <rt/rt.hpp>
 #include <rt/store.hpp>
 #include <rt/math.hpp>
+#include <rt/rand.hpp>
 
 #ifdef BOT_CUDA_SUPPORT
 #include "rt/cuda_comm.hpp"
@@ -10,7 +11,7 @@
 
 namespace bot {
 
-constexpr inline i32 GRID_SIZE = 8;
+constexpr inline i32 GRID_SIZE = 6;
 constexpr inline i32 TEAM_SIZE = 4;
 constexpr inline i32 DEFAULT_HP = 5;
 constexpr inline i32 DEFAULT_SPEED = 10;
@@ -38,6 +39,7 @@ enum class MoveAction : u32 {
 enum class AttackType : u32 {
   Melee,
   RangedGapOne,
+  NUM_ATTACK_TYPES,
 };
 
 struct UnitAction {
@@ -94,6 +96,8 @@ struct Cell {
 struct World {
   MemArena persistentArena = {};
   MemArena tmpArena = {};
+  
+  RNG rng = {};
 
   u64 worldID = 0;
 
@@ -112,6 +116,7 @@ struct World {
 struct SimConfig {
   i32 numActiveWorlds = 0;
   i32 maxNumAgentsPerWorld = TEAM_SIZE * 2;
+  RandKey baseRND = rand::initKey(0);
 };
 
 struct Sim {
@@ -123,6 +128,8 @@ struct Sim {
   i32 numActiveWorlds = 0;
 
   MLInterface ml = {};
+  
+  RandKey baseRND = {};
 };
 
 class SimRT : public Runtime {

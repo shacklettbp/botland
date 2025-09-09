@@ -743,7 +743,7 @@ void Viz::buildImguiWidgets()
 
   // Fixed Turn Order window (upper-right)
   {
-    const float panelWidth = 280.0f;
+    const float panelWidth = 350.0f;
     const float panelHeight = 220.0f;
     
     ImGui::SetNextWindowPos(ImVec2(float(windowWidth) / 2 - panelWidth, 0.0f), ImGuiCond_Always);

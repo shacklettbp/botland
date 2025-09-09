@@ -53,8 +53,8 @@ struct Scene {
 struct OrbitCam {
   Vector3 target = { i32(GRID_SIZE / 2) - 0.5f, i32(GRID_SIZE / 2) - 0.5f, 0.f };
   float heading = 0.5f * PI;
-  float azimuth = 0.25f * PI;
-  float zoom = 10.f;
+  float azimuth = 0.4f * PI;
+  float zoom = 8.f;
 
   float fov = 60.f;
 

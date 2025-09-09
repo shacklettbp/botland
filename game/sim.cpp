@@ -39,10 +39,27 @@ World * createWorld(
     new (world) World {};
     world->persistentArena = persistent_arena;
   }
+  
+  world->rng = RNG(
+    rand::split_i(rt.sim()->baseRND, u32(world_id >> 32), u32(world_id)));
 
   world->worldID = world_id;
 
   world->units.init(rt, world->persistentArena);
+  
+  auto initializeUnit = [&](i32 team, i32 team_offset, i32 spawn_x, i32 spawn_y) {
+    UnitPtr u = world->units.create((u32)ActorType::Unit);
+    world->grid[spawn_y][spawn_x].actorID = u->id.toGeneric();
+
+    u->pos = { spawn_x, spawn_y };
+    u->hp = world->rng.sampleI32(DEFAULT_HP / 2, DEFAULT_HP);
+    u->speed = world->rng.sampleI32(DEFAULT_SPEED / 2, DEFAULT_SPEED);
+    u->team = team;
+    u->attackType = (AttackType)world->rng.sampleI32(0, (i32)AttackType::NUM_ATTACK_TYPES);
+    snprintf(u->name.data, sizeof(u->name.data), "R%d", team_offset);
+    
+    return u->id;
+  };
 
   {
     i32 base_spawn_y = GRID_SIZE / 2 - TEAM_SIZE / 2; 
@@ -50,18 +67,7 @@ World * createWorld(
     for (i32 i = 0; i < TEAM_SIZE; i++) {
       i32 spawn_x = 0;
       i32 spawn_y = base_spawn_y++;
-
-      UnitPtr u = world->units.create((u32)ActorType::Unit);
-
-      world->playerTeam[i] = u->id;
-      world->grid[spawn_y][spawn_x].actorID = u->id.toGeneric();
-
-      u->pos = { spawn_x, spawn_y };
-      u->hp = DEFAULT_HP;
-      u->speed = DEFAULT_SPEED;
-      u->team = 0;
-      u->attackType = AttackType::Melee;
-      snprintf(u->name.data, sizeof(u->name.data), "R%d", i);
+      world->playerTeam[i] = initializeUnit(0, i, spawn_x, spawn_y);
     }
   }
 
@@ -71,18 +77,7 @@ World * createWorld(
     for (i32 i = 0; i < TEAM_SIZE; i++) {
       i32 spawn_x = GRID_SIZE - 1;
       i32 spawn_y = base_spawn_y++;
-
-      UnitPtr u = world->units.create((u32)ActorType::Unit);
-
-      world->enemyTeam[i] = u->id;
-      world->grid[spawn_y][spawn_x].actorID = u->id.toGeneric();
-
-      u->pos = { spawn_x, spawn_y };
-      u->hp = DEFAULT_HP;
-      u->speed = DEFAULT_SPEED;
-      u->team = 1;
-      u->attackType = AttackType::Melee;
-      snprintf(u->name.data, sizeof(u->name.data), "B%d", i + TEAM_SIZE);
+      world->enemyTeam[i] = initializeUnit(1, i, spawn_x, spawn_y);
     }
   }
 
