@@ -910,7 +910,7 @@ void Viz::buildImguiWidgets(float ui_scale)
   }
 }
 
-UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
+UIOutputs Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
                      const char *text_input, float ui_scale, float delta_t)
 {
   if (events.downEvent(InputID::K1)) {
@@ -921,6 +921,8 @@ UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
   }
 
   UIControl ui_ctrl {};
+  std::optional<UnitAction> player_action = std::nullopt;
+
   ui_ctrl.flags |= updateCamera(cam, input, events, delta_t);
   // Handle unit selection on left click (when not camera dragging)
   if (!input.isDown(InputID::MouseRight) && 
@@ -928,8 +930,6 @@ UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
     if (events.downEvent(InputID::MouseLeft)) {
       Vector2 mousePos = input.mousePosition();
       GridPos clickedPos = screenToGridPos(mousePos);
-      
-      selectedGridPos = clickedPos;
       
       if (clickedPos.x != -1 && clickedPos.y != -1) {
         World *world = sim->activeWorlds[curVizActiveWorld];
@@ -952,35 +952,19 @@ UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
     }
     
     World *world = sim->activeWorlds[curVizActiveWorld];
-    bool player_moved = false;
     if (selectedUnit == world->turnCur) {
-      UnitAction playerAction = {};
       if (events.downEvent(InputID::W)) {
-        player_moved = true;
-        playerAction.move = MoveAction::Up;
+        player_action = { .move = MoveAction::Up };
       } else if (events.downEvent(InputID::A)) {
-        player_moved = true;
-        playerAction.move = MoveAction::Left;
+        player_action = { .move = MoveAction::Left };
       } else if (events.downEvent(InputID::S)) {
-        player_moved = true;
-        playerAction.move = MoveAction::Down;
+        player_action = { .move = MoveAction::Down };
       } else if (events.downEvent(InputID::D)) {
-        player_moved = true;
-        playerAction.move = MoveAction::Right;
+        player_action = { .move = MoveAction::Right };
       } else if (events.downEvent(InputID::Space)) {
-        player_moved = true;
-        playerAction.move = MoveAction::Wait;
+        player_action = { .move = MoveAction::Wait };
       }
       
-      if (player_moved) {
-        stepWorld(rt, world, playerAction);
-      }
-      
-      selectedUnit = world->turnCur;
-      {
-        UnitPtr selected = world->units.get(selectedUnit);
-        selectedGridPos = { selected->pos.x, selected->pos.y };
-      }
     }
   }
 
@@ -1013,7 +997,127 @@ UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
   }
   #endif
 
-  return ui_ctrl;
+  return { ui_ctrl, player_action };
+}
+
+void Viz::handleSim(SimRT &rt, std::optional<UnitAction> player_action, float delta_t)
+{
+  World *world = sim->activeWorlds[curVizActiveWorld];
+
+  UnitID cur_unit_id = world->turnCur;
+  UnitPtr cur_unit = {};
+  if (cur_unit_id != UnitID::none()) {
+    cur_unit = world->units.get(cur_unit_id);
+    assert(cur_unit);
+  }
+
+  if (!aiBothTeams && (cur_unit->team == 0 || !aiOpponent)) {
+    if (player_action.has_value()) {
+      stepWorld(rt, world, player_action.value());
+      timeSinceLastSimStep = 0.f;
+    }
+  } else {
+    timeSinceLastSimStep += delta_t;
+    
+    if (timeSinceLastSimStep >= 1.f / simStepsPerSecond) {
+      UnitAction rnd_action = { 
+        .move = (MoveAction)world->rng.sampleI32(0, (i32)MoveAction::NUM_MOVE_ACTIONS),
+      };
+      stepWorld(rt, world, rnd_action);
+      timeSinceLastSimStep = 0.f;
+    }
+  }
+
+  selectedUnit = world->turnCur;
+  if (selectedUnit) {
+    UnitPtr selected = world->units.get(selectedUnit);
+    selectedGridPos = { selected->pos.x, selected->pos.y };
+  }
+}
+      
+StartMenuState Viz::startMenu(SimRT &rt, UserInput &input, UserInputEvents &events,
+                              const char *text_input, float ui_scale, float delta_t)
+{
+  (void)rt;
+
+  ImGuiSystem::UIControl imgui_ctrl = {};
+  ImGuiSystem::newFrame(input, events, windowWidth, windowHeight,
+                        ui_scale, delta_t, text_input, &imgui_ctrl);
+
+  auto viewport = ImGui::GetMainViewport();
+  ImGui::SetNextWindowPos(
+    ImVec2(viewport->WorkSize.x / 2, viewport->WorkSize.y / 2),
+    ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+  ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(100, 150));
+  ImGui::Begin("Main Menu", nullptr,
+               ImGuiWindowFlags_NoMove |
+               ImGuiWindowFlags_NoTitleBar |
+               ImGuiWindowFlags_AlwaysAutoResize);
+  ImGui::SetWindowFontScale(3.0f);
+  
+  float window_width = ImGui::GetWindowSize().x;
+  float button_width = 400.0f; // Adjust width as needed
+  float x_pos = (window_width - button_width) * 0.5f;
+  
+  bool begin_game = false;
+  bool should_exit = false;
+
+  ImGui::SetCursorPosX(x_pos);
+  if (ImGui::Button("Play vs AI", ImVec2(button_width, 50))) {
+    aiOpponent = true;
+    begin_game = true;
+    should_exit = false;
+  }
+
+  ImGui::SetCursorPosX(x_pos);
+  if (ImGui::Button("Control both Sides", ImVec2(button_width, 50))) {
+    aiOpponent = false;
+    begin_game = true;
+    should_exit = false;
+  }
+
+  ImGui::SetCursorPosX(x_pos);
+  if (ImGui::Button("Only AI", ImVec2(button_width, 50))) {
+    aiBothTeams = true;
+    begin_game = true;
+    should_exit = false;
+  }
+
+  ImGui::SetCursorPosX(x_pos);
+  if (ImGui::Button("Exit", ImVec2(button_width, 50))) {
+    aiOpponent = false;
+    begin_game = false;
+    should_exit = true;
+  }
+
+  ImGui::PopStyleVar();
+  ImGui::PopStyleVar();
+  ImGui::End();
+
+  {
+    gpu->waitUntilReady(mainQueue);
+
+    FrameState &frame = frames[curFrameIdx];
+    curFrameIdx = (curFrameIdx + 1) % NUM_FRAMES_IN_FLIGHT;
+    
+    frameEnc.beginEncoding();
+
+    auto [swapchain_tex, swapchain_status] = gpu->acquireSwapchainImage(swapchain);
+    assert(swapchain_status == SwapchainStatus::Valid);
+
+    RasterPassEncoder enc = frameEnc.beginRasterPass(frame.render.finalPass);
+
+    ImGuiSystem::render(enc);
+
+    frameEnc.endRasterPass(enc);
+    
+    frameEnc.endEncoding();
+    gpu->submit(mainQueue, frameEnc);
+    gpu->presentSwapchainImage(swapchain);
+  }
+  
+  return { .beginGame = begin_game, .shouldExit = should_exit };
 }
 
 static void stageViewData(OrbitCam &cam,

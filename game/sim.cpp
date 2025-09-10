@@ -336,31 +336,37 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
           world->grid[move_y][move_x].actorID = unit->id.toGeneric();
           unit->pos.x = move_x;
           unit->pos.y = move_y;
-          
+
+          auto spawnEffect = [&](LocationEffectType type,
+                                 i32 duration)
+          {
+            if (world->grid[cur_y][cur_x].effectID) {
+              logEvent(rt, "Existing effect at (%d, %d) replaced", cur_x, cur_y);
+              world->locationEffects.destroy(world->grid[cur_y][cur_x].effectID);
+              world->grid[cur_y][cur_x].effectID = LocationEffectID::none();
+            }
+
+            LocationEffectPtr effect =
+              world->locationEffects.create((u32)ActorType::LocationEffect);
+            world->grid[cur_y][cur_x].effectID = effect->id;
+            effect->pos.x = cur_x;
+            effect->pos.y = cur_y;
+            effect->duration = duration;
+            effect->type = type;
+          };
+
           switch (unit->attackProp.effect) {
             case AttackEffect::PoisonSpread: {
-              LocationEffectPtr effect =
-                world->locationEffects.create((u32)ActorType::LocationEffect);
-              world->grid[cur_y][cur_x].effectID = effect->id;
-              effect->pos.x = cur_x;
-              effect->pos.y = cur_y;
-              effect->duration = 16;
-              effect->type = LocationEffectType::Poison;
-              
               logEvent(rt, "Unit %s dropped poison at (%d, %d)",
                        unit->name.data, cur_x, cur_y);
+              
+              spawnEffect(LocationEffectType::Poison, 16);
             } break;
             case AttackEffect::HealingBloom: {
-              LocationEffectPtr effect =
-                world->locationEffects.create((u32)ActorType::LocationEffect);
-              world->grid[cur_y][cur_x].effectID = effect->id;
-              effect->pos.x = cur_x;
-              effect->pos.y = cur_y;
-              effect->duration = 2;
-              effect->type = LocationEffectType::Healing;
-
               logEvent(rt, "Unit %s dropped healing at (%d, %d)",
                        unit->name.data, cur_x, cur_y);
+
+              spawnEffect(LocationEffectType::Healing, 2);
             } break;
             default: break;
           }
@@ -391,10 +397,15 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
           }
         } break;
         case LocationEffectType::Healing: {
-          unit->hp += 1;
+          if (unit->hp < DEFAULT_HP) {
+            unit->hp += 1;
 
-          logEvent(rt, "Unit %s was healed at (%d, %d)",
-                   unit->name.data, effect->pos.x, effect->pos.y);
+            logEvent(rt, "Unit %s was healed at (%d, %d)",
+                     unit->name.data, effect->pos.x, effect->pos.y);
+          } else {
+            logEvent(rt, "Unit %s was healed at (%d, %d), but already at max HP",
+                     unit->name.data, effect->pos.x, effect->pos.y);
+          }
 
           effect->duration--;
         } break;
@@ -409,13 +420,14 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
     }
 
     if (effect->duration <= 0) {
-      Cell &cell = world->grid[effect->pos.y][effect->pos.x];
-      world->locationEffects.destroy(cell.effectID);
-      cell.effectID = LocationEffectID::none();
-
       logEvent(rt, "%s effect at (%d, %d) expired",
                effect->type == LocationEffectType::Poison ? "Poison" : "Healing",
                effect->pos.x, effect->pos.y);
+
+      Cell &cell = world->grid[effect->pos.y][effect->pos.x];
+      assert(cell.effectID == effect->id);
+      world->locationEffects.destroy(cell.effectID);
+      cell.effectID = LocationEffectID::none();
     }
   }
 

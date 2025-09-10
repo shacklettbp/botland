@@ -116,6 +116,39 @@ void Frontend::loop()
   bool should_loop = true;
 
   auto prev_frame_start_time = std::chrono::steady_clock::now();
+  
+  while (should_loop) {
+    {
+      bool should_exit = ui_sys->processEvents();
+      if (should_exit ||
+          (window->state & WindowState::ShouldClose) != WindowState::None) {
+        should_loop = false;
+        break;
+      }
+    }
+
+    auto cur_frame_start_time = std::chrono::steady_clock::now();
+    float delta_t;
+    {
+      std::chrono::duration<float> duration =
+        cur_frame_start_time - prev_frame_start_time;
+      delta_t = duration.count();
+    }
+    prev_frame_start_time = cur_frame_start_time;
+
+    StartMenuState start_menu_state = viz.startMenu(rt, ui_sys->inputState(), 
+      ui_sys->inputEvents(), ui_sys->inputText(), window->systemUIScale, delta_t);
+    if (start_menu_state.shouldExit) {
+      should_loop = false;
+      break;
+    }
+
+    if (start_menu_state.beginGame) {
+      should_loop = true;
+      break;
+    }
+  }
+
   while (should_loop) {
     {
       bool should_exit = ui_sys->processEvents();
@@ -134,9 +167,11 @@ void Frontend::loop()
     }
     prev_frame_start_time = cur_frame_start_time;
 
-    UIControl ui_ctrl = viz.runUI(rt, ui_sys->inputState(), 
+    UIOutputs ui_out = viz.runUI(rt, ui_sys->inputState(), 
       ui_sys->inputEvents(), ui_sys->inputText(), window->systemUIScale, delta_t);
-    handleUIControl(ui_ctrl);
+    handleUIControl(ui_out.ctrl);
+    
+    viz.handleSim(rt, ui_out.playerAction, delta_t);
 
     viz.render(rt);
   }

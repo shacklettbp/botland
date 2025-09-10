@@ -237,6 +237,7 @@ struct GenericID {
   class name##Ptr { \
   public: \
     using RefT = name##Ref; \
+    name##Ptr() : chunk_(nullptr), offset_(0) {} \
     name##Ptr(name##Chunk *chunk, i32 offset) : chunk_(chunk), offset_(offset) {} \
     operator bool() const { return !!chunk_; } \
     name##Ref operator*() const \

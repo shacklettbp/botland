@@ -26,6 +26,16 @@ struct UIControl {
   float imeLineHeight = 0.f;
 };
 
+struct UIOutputs {
+  UIControl ctrl = {};
+  std::optional<UnitAction> playerAction = std::nullopt;
+};;
+
+struct StartMenuState {
+  bool beginGame = false;
+  bool shouldExit = false;
+};
+
 struct RenderMesh {
   u32 vertexOffset = 0;
   u32 indexOffset;
@@ -148,10 +158,15 @@ struct Viz {
   Scene scene = {};
   
   int numWorldResets = 0;
+  bool aiOpponent = false;
+  bool aiBothTeams = false;
 
   // Unit selection state
   GridPos selectedGridPos = { -1, -1 };
   UnitID selectedUnit = UnitID::none();
+  
+  float timeSinceLastSimStep = 0.f;
+  float simStepsPerSecond = 2.f;
 
   void init(RTStateHandle rt_state_hdl, Sim *sim_state,
             GPULib *gpu_lib, GPUDevice *gpu_in, Surface surface);
@@ -159,9 +174,15 @@ struct Viz {
 
   void resize(SimRT &rt, Surface surface);
 
-  UIControl runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
+  UIOutputs runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
                   const char *text_input, float ui_scale, float delta_t);
+  
+  void handleSim(SimRT &rt, std::optional<UnitAction> player_action, float delta_t);
+
   void render(SimRT &rt);
+  
+  StartMenuState startMenu(SimRT &rt, UserInput &input, UserInputEvents &events,
+                           const char *text_input, float ui_scale, float delta_t);
 
 private:
   inline void initSwapchain(Surface surface);
