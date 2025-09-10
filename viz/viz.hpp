@@ -208,7 +208,7 @@ private:
   inline void loadGlobalShaders();
   inline void cleanupGlobalShaders();
 
-  inline void buildImguiWidgets(float ui_scale);
+  inline void buildImguiWidgets(SimRT &rt, float ui_scale);
 
   inline void renderBoard(
     SimRT &rt, FrameState &frame, RasterPassEncoder &enc);

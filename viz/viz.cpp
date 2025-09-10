@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <rt/math.hpp>
 #include <cstring>
+#include <cstdarg>
+#include <cstdio>
 
 #include <gas/gas_imgui.hpp>
 
@@ -27,6 +29,120 @@ constexpr const char* PASSIVE_ABILITY_NAMES[] = {
   "None",
   "Holy Aura",
 };
+
+static constexpr inline const char *ACTION_NAMES[] = {
+  "Wait",
+  "Left",
+  "Up",
+  "Right",
+  "Down",
+};
+
+// Dynamic snprintf wrapper that allocates memory using SimRT's temporary arena
+static char* buildFormatStr(SimRT &rt, const char* format, ...)
+{
+  va_list args;
+  va_start(args, format);
+  
+  // Calculate needed size
+  int size_needed = vsnprintf(nullptr, 0, format, args) + 1;
+  va_end(args);
+  
+  // Allocate buffer from temporary arena
+  char* buffer = rt.tmpAllocN<char>(size_needed);
+  
+  // Format the string
+  vsnprintf(buffer, size_needed, format, args);
+  va_end(args);
+  
+  return buffer;
+}
+
+// Convert Event to string representation
+static char* eventToString(SimRT &rt, const Event& event)
+{
+  switch (event.type) {
+    case EventType::UnitKilled:
+      return buildFormatStr(rt, "Unit %s killed", event.unitKilled.unit.data);
+      
+    case EventType::UnitAction:
+      return buildFormatStr(rt, "Unit %s did action %s", 
+                            event.unitAction.unit.data, 
+                            ACTION_NAMES[(i32)event.unitAction.action]);
+      
+    case EventType::UnitAttacked:
+      return buildFormatStr(rt, "Unit %s attacked enemy unit %s for %d damage",
+                            event.unitAttacked.attacker.data, 
+                            event.unitAttacked.target.data, 
+                            event.unitAttacked.damage);
+      
+    case EventType::UnitBiteHealed:
+      return buildFormatStr(rt, "Unit %s bit enemy unit %s and healed %d HP",
+                            event.unitBiteHealed.attacker.data, 
+                            event.unitBiteHealed.target.data, 
+                            event.unitBiteHealed.healAmount);
+      
+    case EventType::UnitPushed:
+      return buildFormatStr(rt, "Unit %s pushed enemy unit %s from (%d, %d) to (%d, %d)",
+                            event.unitPushed.pusher.data, 
+                            event.unitPushed.pushed.data,
+                            event.unitPushed.fromX, event.unitPushed.fromY, 
+                            event.unitPushed.toX, event.unitPushed.toY);
+      
+    case EventType::UnitMoveBlocked:
+      return buildFormatStr(rt, "Unit %s tried to moved from (%d, %d) to (%d, %d), but destination was occupied",
+                            event.unitMoveBlocked.unit.data, 
+                            event.unitMoveBlocked.fromX, event.unitMoveBlocked.fromY,
+                            event.unitMoveBlocked.toX, event.unitMoveBlocked.toY);
+      
+    case EventType::UnitMoved:
+      return buildFormatStr(rt, "Unit %s moved from (%d, %d) to (%d, %d)",
+                            event.unitMoved.unit.data, 
+                            event.unitMoved.fromX, event.unitMoved.fromY, 
+                            event.unitMoved.toX, event.unitMoved.toY);
+      
+    case EventType::EffectReplaced:
+      return buildFormatStr(rt, "Existing effect at (%d, %d) replaced",
+                            event.effectReplaced.x, event.effectReplaced.y);
+      
+    case EventType::PoisonDropped:
+      return buildFormatStr(rt, "Unit %s dropped poison at (%d, %d)",
+                            event.poisonDropped.unit.data, 
+                            event.poisonDropped.x, event.poisonDropped.y);
+      
+    case EventType::HealingDropped:
+      return buildFormatStr(rt, "Unit %s dropped healing at (%d, %d)",
+                            event.healingDropped.unit.data, 
+                            event.healingDropped.x, event.healingDropped.y);
+      
+    case EventType::UnitMovedOutOfBounds:
+      return buildFormatStr(rt, "Unit %s tried to move to move out of bounds",
+                            event.unitMovedOutOfBounds.unit.data);
+      
+    case EventType::UnitPoisoned:
+      return buildFormatStr(rt, "Unit %s took poison damage at (%d, %d)",
+                            event.unitPoisoned.unit.data, 
+                            event.unitPoisoned.x, event.unitPoisoned.y);
+      
+    case EventType::UnitHealed:
+      return buildFormatStr(rt, "Unit %s was healed at (%d, %d)",
+                            event.unitHealed.unit.data, 
+                            event.unitHealed.x, event.unitHealed.y);
+      
+    case EventType::UnitHealedAtMaxHP:
+      return buildFormatStr(rt, "Unit %s was healed at (%d, %d), but already at max HP",
+                            event.unitHealedAtMaxHP.unit.data, 
+                            event.unitHealedAtMaxHP.x, event.unitHealedAtMaxHP.y);
+      
+    case EventType::EffectExpired:
+      return buildFormatStr(rt, "%s effect at (%d, %d) expired",
+                            event.effectExpired.effectType == LocationEffectType::Poison ? "Poison" : "Healing",
+                            event.effectExpired.x, event.effectExpired.y);
+      
+    default:
+      return buildFormatStr(rt, "Unknown event");
+  }
+}
 
 static constexpr inline TextureFormat DEPTH_TEXTURE_FMT =
   TextureFormat::Depth32_Float;
@@ -777,7 +893,7 @@ static UIControl::Flag updateCamera(OrbitCam &cam, UserInput &input,
   return result;
 }
 
-void Viz::buildImguiWidgets(float ui_scale)
+void Viz::buildImguiWidgets(SimRT &rt, float ui_scale)
 {
   World *world = sim->activeWorlds[curVizActiveWorld];
 
@@ -896,7 +1012,10 @@ void Viz::buildImguiWidgets(float ui_scale)
     // Traverse the event log linked list
     EventLog *event = world->eventLogDummy.next;
     while (event) {
-      ImGui::TextUnformatted(event->text);
+      auto tmp_region = rt.beginTmpRegion();
+      char* eventStr = eventToString(rt, event->data);
+      ImGui::TextUnformatted(eventStr);
+      rt.endTmpRegion(tmp_region);
       event = event->next;
     }
     
@@ -972,7 +1091,7 @@ UIOutputs Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
   ImGuiSystem::newFrame(input, events, windowWidth, windowHeight,
                         ui_scale, delta_t, text_input, &imgui_ctrl);
 
-  buildImguiWidgets(ui_scale);
+  buildImguiWidgets(rt, ui_scale);
 
   if ((imgui_ctrl.type & ImGuiSystem::UIControl::EnableIME)) {
     ui_ctrl.flags |= UIControl::EnableIME;

@@ -148,8 +148,125 @@ struct KillUnitJob {
   UnitID unitID = {};
 };
 
+enum class EventType : u32 {
+  UnitKilled,
+  UnitAction,
+  UnitAttacked,
+  UnitBiteHealed,
+  UnitPushed,
+  UnitMoveBlocked,
+  UnitMoved,
+  EffectReplaced,
+  PoisonDropped,
+  HealingDropped,
+  UnitMovedOutOfBounds,
+  UnitPoisoned,
+  UnitHealed,
+  UnitHealedAtMaxHP,
+  EffectExpired,
+};
+
+struct Event {
+  EventType type;
+  
+  struct UnitKilled { 
+    UnitName unit; 
+  };
+  struct UnitAction {
+    UnitName unit;
+    MoveAction action;
+  };
+  struct UnitAttacked {
+    UnitName attacker;
+    UnitName target;
+    i32 damage;
+  };
+  struct UnitBiteHealed {
+    UnitName attacker;
+    UnitName target;
+    i32 healAmount;
+  };
+  struct UnitPushed {
+    UnitName pusher;
+    UnitName pushed;
+    i32 fromX;
+    i32 fromY;
+    i32 toX;
+    i32 toY;
+  };
+  struct UnitMoveBlocked {
+    UnitName unit;
+    i32 fromX;
+    i32 fromY;
+    i32 toX;
+    i32 toY;
+  };
+  struct UnitMoved {
+    UnitName unit;
+    i32 fromX;
+    i32 fromY;
+    i32 toX;
+    i32 toY;
+  };
+  struct EffectReplaced {
+    i32 x;
+    i32 y;
+  };
+  struct PoisonDropped {
+    UnitName unit;
+    i32 x; 
+    i32 y;
+  };
+  struct HealingDropped {
+    UnitName unit;
+    i32 x;
+    i32 y;
+  };
+  struct UnitMovedOutOfBounds {
+    UnitName unit;
+  };
+  struct UnitPoisoned {
+    UnitName unit;
+    i32 x;
+    i32 y;
+  };
+  struct UnitHealed {
+    UnitName unit;
+    i32 x;
+    i32 y;
+  };
+  struct UnitHealedAtMaxHP {
+    UnitName unit;
+    i32 x;
+    i32 y;
+  };
+  struct EffectExpired {
+    LocationEffectType effectType;
+    i32 x;
+    i32 y;
+  };
+
+  union {
+    UnitKilled unitKilled;
+    UnitAction unitAction;
+    UnitAttacked unitAttacked;
+    UnitBiteHealed unitBiteHealed;
+    UnitPushed unitPushed;
+    UnitMoveBlocked unitMoveBlocked;
+    UnitMoved unitMoved;
+    EffectReplaced effectReplaced;
+    PoisonDropped poisonDropped;
+    HealingDropped healingDropped;
+    UnitMovedOutOfBounds unitMovedOutOfBounds;
+    UnitPoisoned unitPoisoned;
+    UnitHealed unitHealed;
+    UnitHealedAtMaxHP unitHealedAtMaxHP;
+    EffectExpired effectExpired;
+  };
+};
+
 struct EventLog {
-  char *text = nullptr;
+  Event data = {};
   EventLog *next = nullptr;
 };
 

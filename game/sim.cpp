@@ -6,19 +6,8 @@
 
 namespace bot {
 
-static constexpr inline const char *ACTION_NAMES[] = {
-  "Wait",
-  "Left",
-  "Up",
-  "Right",
-  "Down",
-};
-
-static void logEvent(SimRT &rt, const char *fmt, ...)
+static void logEvent(SimRT &rt, Event event)
 {
-  va_list args;
-  va_start(args, fmt);
-
   World *world = rt.world();
 
   EventLog *prev_log = world->eventLogTail;
@@ -26,11 +15,7 @@ static void logEvent(SimRT &rt, const char *fmt, ...)
   prev_log->next = log;
   world->eventLogTail = log;
   
-  int num_chars = vsnprintf(nullptr, 0, fmt, args);
-  log->text = rt.arenaAllocN<char>(world->persistentArena, num_chars + 1);
-  int num_written = vsnprintf(log->text, num_chars + 1, fmt, args);
-  assert(num_written == num_chars);
-
+  log->data = event;
   log->next = nullptr;
 }
 
@@ -39,7 +24,10 @@ static inline void killUnit(SimRT &rt,  World *world, UnitID id)
 {
   UnitPtr u = world->units.get(id);
   
-  logEvent(rt, "Unit %s killed", u->name.data);
+  logEvent(rt, {
+    .type = EventType::UnitKilled,
+    .unitKilled = { .unit = u->name }
+  });
 
   TurnListLinkedList &turnListItem = u->turnListItem;
   
@@ -255,8 +243,10 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
   }
   
   {
-    logEvent(rt, "Unit %s did action %s",
-      unit->name.data, ACTION_NAMES[(i32)action.move]);
+    logEvent(rt, {
+      .type = EventType::UnitAction,
+      .unitAction = { .unit = unit->name, .action = action.move }
+    });
   }
 
   // Only process if there's an actual movement
@@ -283,8 +273,10 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
           target_unit->hp -= unit->attackProp.damage;
           attacked = true;
           
-          logEvent(rt, "Unit %s attacked enemy unit %s for %d damage",
-              unit->name.data, target_unit->name.data, unit->attackProp.damage);
+          logEvent(rt, {
+            .type = EventType::UnitAttacked,
+            .unitAttacked = { .attacker = unit->name, .target = target_unit->name, .damage = unit->attackProp.damage }
+          });
           
           if (target_unit->hp <= 0) {
             killUnit(rt, world, target_id);
@@ -292,8 +284,10 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
             if (unit->attackProp.effect == AttackEffect::VampiricBite) {
               unit->hp += unit->attackProp.damage;
 
-              logEvent(rt, "Unit %s bit enemy unit %s and healed %d HP",
-                       unit->name.data, target_unit->name.data, unit->attackProp.damage);
+              logEvent(rt, {
+                .type = EventType::UnitBiteHealed,
+                .unitBiteHealed = { .attacker = unit->name, .target = target_unit->name, .healAmount = unit->attackProp.damage }
+              });
             }
           } else {
             if (unit->attackProp.effect == AttackEffect::Push) {
@@ -307,9 +301,11 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
                   target_unit->pos.x = push_x;
                   target_unit->pos.y = push_y;
 
-                  logEvent(rt, "Unit %s pushed enemy unit %s from (%d, %d) to (%d, %d)",
-                           unit->name.data, target_unit->name.data, 
-                           attack_x, attack_y, push_x, push_y);
+                  logEvent(rt, {
+                    .type = EventType::UnitPushed,
+                    .unitPushed = { .pusher = unit->name, .pushed = target_unit->name,
+                                   .fromX = attack_x, .fromY = attack_y, .toX = push_x, .toY = push_y }
+                  });
                 }
               }
             }
@@ -324,11 +320,15 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
         GenericID move_target_id = world->grid[move_y][move_x].actorID;
         // Only move if the target tile is empty
         if (move_target_id) {
-          logEvent(rt, "Unit %s tried to moved from (%d, %d) to (%d, %d), but destination was occupied",
-                  unit->name.data, cur_x, cur_y, move_x, move_y);
+          logEvent(rt, {
+            .type = EventType::UnitMoveBlocked,
+            .unitMoveBlocked = { .unit = unit->name, .fromX = cur_x, .fromY = cur_y, .toX = move_x, .toY = move_y }
+          });
         } else {
-          logEvent(rt, "Unit %s moved from (%d, %d) to (%d, %d)",
-                  unit->name.data, cur_x, cur_y, move_x, move_y);
+          logEvent(rt, {
+            .type = EventType::UnitMoved,
+            .unitMoved = { .unit = unit->name, .fromX = cur_x, .fromY = cur_y, .toX = move_x, .toY = move_y }
+          });
 
           // Clear current position
           world->grid[cur_y][cur_x].actorID = GenericID::none();
@@ -341,7 +341,10 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
                                  i32 duration)
           {
             if (world->grid[cur_y][cur_x].effectID) {
-              logEvent(rt, "Existing effect at (%d, %d) replaced", cur_x, cur_y);
+              logEvent(rt, {
+                .type = EventType::EffectReplaced,
+                .effectReplaced = { .x = cur_x, .y = cur_y }
+              });
               world->locationEffects.destroy(world->grid[cur_y][cur_x].effectID);
               world->grid[cur_y][cur_x].effectID = LocationEffectID::none();
             }
@@ -357,14 +360,18 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
 
           switch (unit->attackProp.effect) {
             case AttackEffect::PoisonSpread: {
-              logEvent(rt, "Unit %s dropped poison at (%d, %d)",
-                       unit->name.data, cur_x, cur_y);
+              logEvent(rt, {
+                .type = EventType::PoisonDropped,
+                .poisonDropped = { .unit = unit->name, .x = cur_x, .y = cur_y }
+              });
               
               spawnEffect(LocationEffectType::Poison, 16);
             } break;
             case AttackEffect::HealingBloom: {
-              logEvent(rt, "Unit %s dropped healing at (%d, %d)",
-                       unit->name.data, cur_x, cur_y);
+              logEvent(rt, {
+                .type = EventType::HealingDropped,
+                .healingDropped = { .unit = unit->name, .x = cur_x, .y = cur_y }
+              });
 
               spawnEffect(LocationEffectType::Healing, 2);
             } break;
@@ -372,7 +379,10 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
           }
         }
       } else {
-        logEvent(rt, "Unit %s tried to move to move out of bounds");
+        logEvent(rt, {
+          .type = EventType::UnitMovedOutOfBounds,
+          .unitMovedOutOfBounds = { .unit = unit->name }
+        });
       }
     }
   }
@@ -389,8 +399,10 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
         case LocationEffectType::Poison: {
           unit->hp -= 1;
 
-          logEvent(rt, "Unit %s took poison damage at (%d, %d)",
-                   unit->name.data, effect->pos.x, effect->pos.y);
+          logEvent(rt, {
+            .type = EventType::UnitPoisoned,
+            .unitPoisoned = { .unit = unit->name, .x = effect->pos.x, .y = effect->pos.y }
+          });
           
           if (unit->hp <= 0) {
             killUnit(rt, world, unit->id);
@@ -400,11 +412,15 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
           if (unit->hp < DEFAULT_HP) {
             unit->hp += 1;
 
-            logEvent(rt, "Unit %s was healed at (%d, %d)",
-                     unit->name.data, effect->pos.x, effect->pos.y);
+            logEvent(rt, {
+              .type = EventType::UnitHealed,
+              .unitHealed = { .unit = unit->name, .x = effect->pos.x, .y = effect->pos.y }
+            });
           } else {
-            logEvent(rt, "Unit %s was healed at (%d, %d), but already at max HP",
-                     unit->name.data, effect->pos.x, effect->pos.y);
+            logEvent(rt, {
+              .type = EventType::UnitHealedAtMaxHP,
+              .unitHealedAtMaxHP = { .unit = unit->name, .x = effect->pos.x, .y = effect->pos.y }
+            });
           }
 
           effect->duration--;
@@ -420,9 +436,10 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
     }
 
     if (effect->duration <= 0) {
-      logEvent(rt, "%s effect at (%d, %d) expired",
-               effect->type == LocationEffectType::Poison ? "Poison" : "Healing",
-               effect->pos.x, effect->pos.y);
+      logEvent(rt, {
+        .type = EventType::EffectExpired,
+        .effectExpired = { .effectType = effect->type, .x = effect->pos.x, .y = effect->pos.y }
+      });
 
       Cell &cell = world->grid[effect->pos.y][effect->pos.x];
       assert(cell.effectID == effect->id);
@@ -448,6 +465,13 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
 void destroyWorld(SimRT &rt, World *world)
 {
   rt.releaseArena(world->persistentArena);
+}
+
+static void fillWorldObservations(SimRT &rt, World *world, float *obs_out)
+{
+  rt.setWorld(world);
+  
+  
 }
 
 BOT_KERNEL(botInitSim, TaskKernelConfig::singleThread(),
@@ -532,6 +556,18 @@ BOT_TASK_KERNEL(botStepWorlds, Sim *sim)
     });
 
   exec.finish(rt);
+}
+
+BOT_TASK_KERNEL(botFillObservations, Sim *sim)
+{
+  SimRT rt(BOT_RT_INIT_ARGS, sim);
+
+  TaskExec exec = sim->taskMgr.start(rt);
+  exec.forEachTask(
+    rt, sim->numActiveWorlds, true,
+    [&](i32 idx) {
+      fillWorldObservations(rt, sim->activeWorlds[idx], sim->ml.observations + idx * sizeof(UnitObservation));
+    });
 }
 
 }
