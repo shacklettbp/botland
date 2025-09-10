@@ -6,6 +6,14 @@
 
 namespace bot {
 
+static constexpr inline const char *ACTION_NAMES[] = {
+  "Wait",
+  "Left",
+  "Up",
+  "Right",
+  "Down",
+};
+
 static void logEvent(SimRT &rt, const char *fmt, ...)
 {
   va_list args;
@@ -52,9 +60,6 @@ static inline void killUnit(SimRT &rt,  World *world, UnitID id)
     next->turnListItem.prev = prev_id;
   }
 
-  u->turnListItem.prev = UnitID::none();
-  u->turnListItem.next = UnitID::none();
-  
   world->grid[u->pos.y][u->pos.x].actorID = GenericID::none();
   
   world->killUnitJobs.add(KillUnitJob { .unitID = id });
@@ -248,6 +253,11 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
     default:
       break;
   }
+  
+  {
+    logEvent(rt, "Unit %s did action %s",
+      unit->name.data, ACTION_NAMES[(i32)action.move]);
+  }
 
   // Only process if there's an actual movement
   if (dx != 0 || dy != 0) {
@@ -273,11 +283,17 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
           target_unit->hp -= unit->attackProp.damage;
           attacked = true;
           
+          logEvent(rt, "Unit %s attacked enemy unit %s for %d damage",
+              unit->name.data, target_unit->name.data, unit->attackProp.damage);
+          
           if (target_unit->hp <= 0) {
             killUnit(rt, world, target_id);
             
             if (unit->attackProp.effect == AttackEffect::VampiricBite) {
               unit->hp += unit->attackProp.damage;
+
+              logEvent(rt, "Unit %s bit enemy unit %s and healed %d HP",
+                       unit->name.data, target_unit->name.data, unit->attackProp.damage);
             }
           } else {
             if (unit->attackProp.effect == AttackEffect::Push) {
@@ -290,6 +306,10 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
                   world->grid[attack_y][attack_x].actorID = GenericID::none();
                   target_unit->pos.x = push_x;
                   target_unit->pos.y = push_y;
+
+                  logEvent(rt, "Unit %s pushed enemy unit %s from (%d, %d) to (%d, %d)",
+                           unit->name.data, target_unit->name.data, 
+                           attack_x, attack_y, push_x, push_y);
                 }
               }
             }
@@ -303,7 +323,13 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
       if (move_x >= 0 && move_x < GRID_SIZE && move_y >= 0 && move_y < GRID_SIZE) {
         GenericID move_target_id = world->grid[move_y][move_x].actorID;
         // Only move if the target tile is empty
-        if (!move_target_id) {
+        if (move_target_id) {
+          logEvent(rt, "Unit %s tried to moved from (%d, %d) to (%d, %d), but destination was occupied",
+                  unit->name.data, cur_x, cur_y, move_x, move_y);
+        } else {
+          logEvent(rt, "Unit %s moved from (%d, %d) to (%d, %d)",
+                  unit->name.data, cur_x, cur_y, move_x, move_y);
+
           // Clear current position
           world->grid[cur_y][cur_x].actorID = GenericID::none();
           // Move to new position
@@ -320,6 +346,9 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
               effect->pos.y = cur_y;
               effect->duration = 16;
               effect->type = LocationEffectType::Poison;
+              
+              logEvent(rt, "Unit %s dropped poison at (%d, %d)",
+                       unit->name.data, cur_x, cur_y);
             } break;
             case AttackEffect::HealingBloom: {
               LocationEffectPtr effect =
@@ -329,51 +358,70 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
               effect->pos.y = cur_y;
               effect->duration = 2;
               effect->type = LocationEffectType::Healing;
+
+              logEvent(rt, "Unit %s dropped healing at (%d, %d)",
+                       unit->name.data, cur_x, cur_y);
             } break;
             default: break;
           }
         }
+      } else {
+        logEvent(rt, "Unit %s tried to move to move out of bounds");
       }
     }
   }
   
-  for (auto effect : world->locationEffects) {
-    Cell &cell = world->grid[effect->pos.y][effect->pos.x];
+  {
+    Cell cur_cell = world->grid[unit->pos.y][unit->pos.x];
+    assert(cur_cell.actorID == unit->id.toGeneric());
     
-    if (cell.actorID && cell.actorID.type == (i32)ActorType::Unit) {
-      UnitID unit_id = UnitID::fromGeneric(cell.actorID);
-      UnitPtr affected_unit = world->units.get(unit_id);
-      assert(affected_unit);
+    if (cur_cell.effectID) {
+      LocationEffectPtr effect = world->locationEffects.get(cur_cell.effectID);
+      assert(effect);
 
       switch (effect->type) {
         case LocationEffectType::Poison: {
-          affected_unit->hp -= 1;
+          unit->hp -= 1;
+
+          logEvent(rt, "Unit %s took poison damage at (%d, %d)",
+                   unit->name.data, effect->pos.x, effect->pos.y);
           
-          if (affected_unit->hp <= 0) {
-            killUnit(rt, world, unit_id);
+          if (unit->hp <= 0) {
+            killUnit(rt, world, unit->id);
           }
         } break;
         case LocationEffectType::Healing: {
-          affected_unit->hp += 1;
+          unit->hp += 1;
+
+          logEvent(rt, "Unit %s was healed at (%d, %d)",
+                   unit->name.data, effect->pos.x, effect->pos.y);
+
           effect->duration--;
         } break;
         default: break;
       }
     }
-
+  }
+  
+  for (auto effect : world->locationEffects) {
     if (effect->type == LocationEffectType::Poison) {
       effect->duration--;
     }
 
     if (effect->duration <= 0) {
+      Cell &cell = world->grid[effect->pos.y][effect->pos.x];
       world->locationEffects.destroy(cell.effectID);
       cell.effectID = LocationEffectID::none();
+
+      logEvent(rt, "%s effect at (%d, %d) expired",
+               effect->type == LocationEffectType::Poison ? "Poison" : "Healing",
+               effect->pos.x, effect->pos.y);
     }
   }
 
   {
     // Advance to next alive unit
-    world->turnCur = unit->turnListItem.next ? unit->turnListItem.next : world->turnHead;
+    world->turnCur = unit->turnListItem.next;
   }
   
   for (auto job : world->killUnitJobs) {
