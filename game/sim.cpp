@@ -9,14 +9,16 @@ namespace bot {
 static void logEvent(SimRT &rt, Event event)
 {
   World *world = rt.world();
-
-  EventLog *prev_log = world->eventLogTail;
-  EventLog *log = rt.arenaAlloc<EventLog>(world->persistentArena);
-  prev_log->next = log;
-  world->eventLogTail = log;
   
-  log->data = event;
-  log->next = nullptr;
+  EventLog *cur_log = world->eventLogTail;
+  
+  if (cur_log->numEvents == EventLog::MAX_EVENTS) {
+    cur_log->next = rt.arenaAlloc<EventLog>(world->persistentArena);
+    new (cur_log->next) EventLog {};
+    cur_log = cur_log->next;
+  }
+  
+  cur_log->data[cur_log->numEvents++] = event;
 }
 
 // Destroy unit and unlink from turn order
@@ -74,6 +76,10 @@ World * createWorld(
     new (world) World {};
     world->persistentArena = persistent_arena;
   }
+  
+  world->eventLogHead = rt.arenaAlloc<EventLog>(world->persistentArena);
+  new (world->eventLogHead) EventLog {};
+  world->eventLogTail = world->eventLogHead;
   
   world->rng = RNG(
     rand::split_i(rt.sim()->baseRND, u32(world_id >> 32), u32(world_id)));

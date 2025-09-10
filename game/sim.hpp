@@ -266,7 +266,10 @@ struct Event {
 };
 
 struct EventLog {
-  Event data = {};
+  static inline constexpr i32 MAX_EVENTS = 256;
+
+  Event data[MAX_EVENTS] = {};
+  i32 numEvents = 0;
   EventLog *next = nullptr;
 };
 
@@ -293,9 +296,8 @@ struct World {
   UnitID turnCur = UnitID::none();
   i32 numAliveUnits = 0;
   
-  EventLog eventLogDummy = {};
-  EventLog *eventLogHead = &eventLogDummy;
-  EventLog *eventLogTail = &eventLogDummy;
+  EventLog *eventLogHead = nullptr;
+  EventLog *eventLogTail = nullptr;
 };
 
 struct SimConfig {

@@ -1010,13 +1010,15 @@ void Viz::buildImguiWidgets(SimRT &rt, float ui_scale)
     ImGui::BeginChild("EventLogScrolling", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
     
     // Traverse the event log linked list
-    EventLog *event = world->eventLogDummy.next;
-    while (event) {
-      auto tmp_region = rt.beginTmpRegion();
-      char* eventStr = eventToString(rt, event->data);
-      ImGui::TextUnformatted(eventStr);
-      rt.endTmpRegion(tmp_region);
-      event = event->next;
+    EventLog *event_log = world->eventLogHead;
+    while (event_log) {
+      for (i32 i = 0; i < event_log->numEvents; i++) {
+        auto tmp_region = rt.beginTmpRegion();
+        char* eventStr = eventToString(rt, event_log->data[i]);
+        ImGui::TextUnformatted(eventStr);
+        rt.endTmpRegion(tmp_region);
+      }
+      event_log = event_log->next;
     }
     
     // Auto-scroll to bottom if at bottom
