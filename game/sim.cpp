@@ -6,12 +6,35 @@
 
 namespace bot {
 
+static void logEvent(SimRT &rt, const char *fmt, ...)
+{
+  va_list args;
+  va_start(args, fmt);
+
+  World *world = rt.world();
+
+  EventLog *prev_log = world->eventLogTail;
+  EventLog *log = rt.arenaAlloc<EventLog>(world->persistentArena);
+  prev_log->next = log;
+  world->eventLogTail = log;
+  
+  int num_chars = vsnprintf(nullptr, 0, fmt, args);
+  log->text = rt.arenaAllocN<char>(world->persistentArena, num_chars + 1);
+  int num_written = vsnprintf(log->text, num_chars + 1, fmt, args);
+  assert(num_written == num_chars);
+
+  log->next = nullptr;
+}
+
 // Destroy unit and unlink from turn order
-static inline void killUnit(World *world, UnitID id)
+static inline void killUnit(SimRT &rt,  World *world, UnitID id)
 {
   UnitPtr u = world->units.get(id);
-  TurnListLinkedList &turnListItem = u->turnListItem;
+  
+  logEvent(rt, "Unit %s killed", u->name.data);
 
+  TurnListLinkedList &turnListItem = u->turnListItem;
+  
   UnitID prev_id = turnListItem.prev;
   UnitID next_id = turnListItem.next;
   
@@ -193,6 +216,8 @@ World * createWorld(
 
 void stepWorld(SimRT &rt, World *world, UnitAction action)
 {
+  rt.setWorld(world);
+
   UnitID cur_unit_id = world->turnCur;
   UnitPtr unit = world->units.get(cur_unit_id);
   
@@ -249,7 +274,7 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
           attacked = true;
           
           if (target_unit->hp <= 0) {
-            killUnit(world, target_id);
+            killUnit(rt, world, target_id);
             
             if (unit->attackProp.effect == AttackEffect::VampiricBite) {
               unit->hp += unit->attackProp.damage;
@@ -325,7 +350,7 @@ void stepWorld(SimRT &rt, World *world, UnitAction action)
           affected_unit->hp -= 1;
           
           if (affected_unit->hp <= 0) {
-            killUnit(world, unit_id);
+            killUnit(rt, world, unit_id);
           }
         } break;
         case LocationEffectType::Healing: {
@@ -438,11 +463,13 @@ BOT_TASK_KERNEL(botStepWorlds, Sim *sim)
   SimRT rt(BOT_RT_INIT_ARGS, sim);
 
   TaskExec exec = sim->taskMgr.start(rt);
-  //exec.forEachTask(
-  //  rt, sim->numActiveWorlds, true,
-  //  [&](i32 idx) {
-  //    stepWorld(rt, sim->activeWorlds[idx]);
-  //  });
+  exec.forEachTask(
+    rt, sim->numActiveWorlds, true,
+    [&](i32 idx) {
+      stepWorld(rt, sim->activeWorlds[idx], UnitAction {
+        .move = (MoveAction)sim->ml.actions[idx],
+      });
+    });
 
   exec.finish(rt);
 }

@@ -148,6 +148,11 @@ struct KillUnitJob {
   UnitID unitID = {};
 };
 
+struct EventLog {
+  char *text = nullptr;
+  EventLog *next = nullptr;
+};
+
 struct World {
   MemArena persistentArena = {};
   MemArena tmpArena = {};
@@ -170,6 +175,10 @@ struct World {
   UnitID turnHead = UnitID::none();
   UnitID turnCur = UnitID::none();
   i32 numAliveUnits = 0;
+  
+  EventLog eventLogDummy = {};
+  EventLog *eventLogHead = &eventLogDummy;
+  EventLog *eventLogTail = &eventLogDummy;
 };
 
 struct SimConfig {

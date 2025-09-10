@@ -777,7 +777,7 @@ static UIControl::Flag updateCamera(OrbitCam &cam, UserInput &input,
   return result;
 }
 
-void Viz::buildImguiWidgets()
+void Viz::buildImguiWidgets(float ui_scale)
 {
   World *world = sim->activeWorlds[curVizActiveWorld];
 
@@ -786,7 +786,7 @@ void Viz::buildImguiWidgets()
     const float panelWidth = 280.0f;
     const float panelHeight = 220.0f;
     
-    ImGui::SetNextWindowPos(ImVec2(float(windowWidth) / 2 - panelWidth, 0.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(float(windowWidth) / ui_scale - panelWidth, 0.0f), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(panelWidth, panelHeight), ImGuiCond_Always);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
@@ -870,12 +870,44 @@ void Viz::buildImguiWidgets()
   }
   
   // Debug window
-  ImGui::Begin("Debug");
-  ImGui::Text("Click on a unit to inspect its stats");
-  if (selectedGridPos.x >= 0 && selectedGridPos.y >= 0) {
-    ImGui::Text("Selected cell: (%d, %d)", selectedGridPos.x, selectedGridPos.y);
+  {
+    ImGui::Begin("Debug");
+    ImGui::Text("Click on a unit to inspect its stats");
+    if (selectedGridPos.x >= 0 && selectedGridPos.y >= 0) {
+      ImGui::Text("Selected cell: (%d, %d)", selectedGridPos.x, selectedGridPos.y);
+    }
+    ImGui::End();
   }
-  ImGui::End();
+  
+  {
+    float panelWidth = 600.0f;
+    float panelHeight = 100.f;
+    
+    // Event Log window with scrollback
+    ImGui::SetNextWindowPos(
+      ImVec2(float(windowWidth) / ui_scale / 2 - panelWidth / 2,
+             float(windowHeight) / ui_scale - panelHeight),
+      ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(panelWidth, panelHeight), ImGuiCond_Always);
+    ImGui::Begin("Event Log");
+    
+    ImGui::BeginChild("EventLogScrolling", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+    
+    // Traverse the event log linked list
+    EventLog *event = world->eventLogDummy.next;
+    while (event) {
+      ImGui::TextUnformatted(event->text);
+      event = event->next;
+    }
+    
+    // Auto-scroll to bottom if at bottom
+    if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
+      ImGui::SetScrollHereY(1.0f);
+    }
+    
+    ImGui::EndChild();
+    ImGui::End();
+  }
 }
 
 UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
@@ -899,9 +931,7 @@ UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
       
       selectedGridPos = clickedPos;
       
-      if (clickedPos.x == -1 && clickedPos.y == -1) {
-        selectedUnit = UnitID::none();
-      } else {
+      if (clickedPos.x != -1 && clickedPos.y != -1) {
         World *world = sim->activeWorlds[curVizActiveWorld];
         selectedGridPos = clickedPos;
         
@@ -958,7 +988,7 @@ UIControl Viz::runUI(SimRT &rt, UserInput &input, UserInputEvents &events,
   ImGuiSystem::newFrame(input, events, windowWidth, windowHeight,
                         ui_scale, delta_t, text_input, &imgui_ctrl);
 
-  buildImguiWidgets();
+  buildImguiWidgets(ui_scale);
 
   if ((imgui_ctrl.type & ImGuiSystem::UIControl::EnableIME)) {
     ui_ctrl.flags |= UIControl::EnableIME;
